@@ -1,7 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
-const connectDB = require('./Config/db');  
+const connectDB = require('./config/db');  
 const path = require('path');
 const http = require('http');
 const { initSocket } = require('./socket');

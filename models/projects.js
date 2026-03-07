@@ -32,10 +32,33 @@ const projectSchema = new mongoose.Schema({
       default: 'Pending'
     }
   },
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization'
+  },
+  roles: [
+    {
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Profile'
+      },
+      role: {
+        type: String,
+        enum: ['owner', 'admin', 'member', 'viewer', 'reporter'],
+        default: 'member'
+      }
+    }
+  ],
+  statuses: [
+    {
+      name: String,
+      order: Number
+    }
+  ],
   team: [
     {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Profile' // Reference to the Profile collection
+      ref: 'Profile'
     }
   ],
   tasks: [

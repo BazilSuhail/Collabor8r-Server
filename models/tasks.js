@@ -36,8 +36,39 @@ const taskSchema = new mongoose.Schema({
   },
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Profile'  
+    ref: 'Profile'
   },
+  sprintId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Sprint'
+  },
+  parentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Task'
+  },
+  estimateHours: {
+    type: Number,
+    default: 0
+  },
+  loggedHours: {
+    type: Number,
+    default: 0
+  },
+  remainingHours: {
+    type: Number,
+    default: 0
+  },
+  resolution: {
+    type: String,
+    enum: ['Done', "Won't Fix", 'Duplicate', 'Cannot Reproduce', null],
+    default: null
+  },
+  labels: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Label'
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now
@@ -48,7 +79,7 @@ const taskSchema = new mongoose.Schema({
   },
   comments: [
     {
-      type: String,  
+      type: String,
     },
   ],
 });

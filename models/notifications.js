@@ -13,8 +13,12 @@ const notificationSchema = new mongoose.Schema({
         required: true,
       },
       data: {
-        type: mongoose.Schema.Types.Mixed, // Schemaless object for arbitrary attributes
+        type: mongoose.Schema.Types.Mixed,
         default: () => ({ createdAt: Date.now() }),
+      },
+      read: {
+        type: Boolean,
+        default: false,
       },
     },
   ],
