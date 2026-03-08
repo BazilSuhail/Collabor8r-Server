@@ -1,0 +1,43 @@
+const Notification = require('../models/notifications');
+const { sendMessageToUser } = require('../socket');
+
+async function sendNotification(userId, type, data) {
+  const notificationDoc = await Notification.findById(userId);
+  if (!notificationDoc) return null;
+
+  const entry = { type, data: { ...data, createdAt: Date.now() }, read: false };
+  notificationDoc.notifications.push(entry);
+  await notificationDoc.save();
+
+  sendMessageToUser(userId, entry);
+
+  return entry;
+}
+
+async function markAsRead(userId, notificationIndex) {
+  const notificationDoc = await Notification.findById(userId);
+  if (!notificationDoc) throw new Error('Notifications not found');
+
+  if (notificationIndex === undefined) {
+    notificationDoc.notifications.forEach((n) => { n.read = true; });
+  } else if (notificationDoc.notifications[notificationIndex]) {
+    notificationDoc.notifications[notificationIndex].read = true;
+  }
+
+  await notificationDoc.save();
+  return notificationDoc;
+}
+
+async function getNotifications(userId) {
+  const notificationDoc = await Notification.findById(userId);
+  if (!notificationDoc) return [];
+  return notificationDoc.notifications;
+}
+
+async function getUnreadCount(userId) {
+  const notificationDoc = await Notification.findById(userId);
+  if (!notificationDoc) return 0;
+  return notificationDoc.notifications.filter((n) => !n.read).length;
+}
+
+module.exports = { sendNotification, markAsRead, getNotifications, getUnreadCount };
