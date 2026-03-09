@@ -2,177 +2,61 @@ const Project = require('../models/projects');
 const Profile = require('../models/profile');
 const JoinProject = require('../models/joinProjects');
 
-
-// Optimized fetch projects joined by a user
-exports.getJoinedProjects = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const joinProjectDoc = await JoinProject.findById(userId).select('projects');
-
-        if (!joinProjectDoc) {
-            return res.status(404).json({ error: 'No joined projects found for this user.' });
-        }
-
-        const projectIds = joinProjectDoc.projects; // Array of project ObjectIds
-
-        // Use Promise.all to process all projects in parallel
-        const joinedProjects = await Promise.all(
-            projectIds.map(async (projectId) => {
-                const project = await Project.findById(projectId)
-                    .select('name description createdBy projectManager theme tasks team') // Fetch only required fields
-                    .lean(); // Convert Mongoose document to plain JS object
-
-                if (!project) return null;
-
-                // Fetch the admin (createdBy) details from the Profile collection
-                const adminProfile = await Profile.findById(project.createdBy)
-                    .select('name avatar')
-                    .lean();
-
-                return {
-                    _id:project._id,
-                    name: project.name,
-                    projectManager:project.projectManager,
-                    theme: project.theme,
-                    description: project.description,
-                    createdBy: adminProfile ? { name: adminProfile.name, avatar: adminProfile.avatar } : null,
-                    taskCount: project.tasks.length,
-                    teamCount: project.team.length,
-                };
-            })
-        );
-
-        // Filter out any null projects (in case a projectId is invalid or deleted)
-        const filteredProjects = joinedProjects.filter(Boolean);
-        //console.log(filteredProjects)\
-        res.status(200).json(filteredProjects);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Server error while fetching joined projects' });
-    }
+const formatProject = async (projectId) => {
+  const project = await Project.findById(projectId)
+    .select('name description createdBy projectManager theme tasks team')
+    .lean();
+  if (!project) return null;
+  const admin = project.createdBy ? await Profile.findById(project.createdBy).select('name avatar').lean() : null;
+  return {
+    _id: project._id, name: project.name, projectManager: project.projectManager,
+    theme: project.theme, description: project.description,
+    createdBy: admin ? { name: admin.name, avatar: admin.avatar } : null,
+    taskCount: project.tasks?.length || 0,
+    teamCount: project.team?.length || 0,
+  };
 };
 
-// Optimized fetch projects joined by a user
+exports.getJoinedProjects = async (req, res) => {
+  try {
+    const doc = await JoinProject.findById(req.user.id).select('projects');
+    if (!doc) return res.status(404).json({ error: 'No joined projects found.' });
+
+    const projects = await Promise.all(doc.projects.map(formatProject));
+    res.status(200).json(projects.filter(Boolean));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error while fetching joined projects' });
+  }
+};
+
 exports.getJoinedProjectsAsManager = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const joinProjectDoc = await JoinProject.findById(userId).select('asManager');
+  try {
+    const doc = await JoinProject.findById(req.user.id).select('asManager');
+    if (!doc) return res.status(404).json({ error: 'No managed projects found.' });
 
-        if (!joinProjectDoc) {
-            return res.status(404).json({ error: 'No joined projects found for this user.' });
-        }
-
-        const projectIds = joinProjectDoc.asManager; // Array of project ObjectIds
-
-        // Use Promise.all to process all projects in parallel
-        const joinedProjects = await Promise.all(
-            projectIds.map(async (projectId) => {
-                const project = await Project.findById(projectId)
-                    .select('name description createdBy projectManager theme tasks team') // Fetch only required fields
-                    .lean(); // Convert Mongoose document to plain JS object
-
-                if (!project) return null;
-
-                // Fetch the admin (createdBy) details from the Profile collection
-                const adminProfile = await Profile.findById(project.createdBy)
-                    .select('name avatar')
-                    .lean();
-
-                return {
-                    _id:project._id,
-                    name: project.name,
-                    projectManager:project.projectManager,
-                    theme: project.theme,
-                    description: project.description,
-                    createdBy: adminProfile ? { name: adminProfile.name, avatar: adminProfile.avatar } : null,
-                    taskCount: project.tasks.length,
-                    teamCount: project.team.length,
-                };
-            })
-        );
-
-        // Filter out any null projects (in case a projectId is invalid or deleted)
-        const filteredProjects = joinedProjects.filter(Boolean);
-        //console.log(filteredProjects)\
-        res.status(200).json(filteredProjects);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Server error while fetching joined projects' });
-    }
+    const projects = await Promise.all(doc.asManager.map(formatProject));
+    res.status(200).json(projects.filter(Boolean));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error while fetching managed projects' });
+  }
 };
 
 exports.getProjectDetails = async (req, res) => {
-    try {
-        const { projectId } = req.params;
+  try {
+    const project = await Project.findById(req.params.projectId).lean();
+    if (!project) return res.status(404).json({ error: 'Project not found' });
 
-        // Fetch the project details by ID
-        const project = await Project.findById(projectId);
+    if (!project.team?.length) return res.status(200).json({ project, teamDetails: 'No team members found.' });
 
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
+    const profiles = await Profile.find({ _id: { $in: project.team } }).select('name email avatar').lean();
+    const profileMap = Object.fromEntries(profiles.map((p) => [p._id.toString(), p]));
+    const populatedTeam = project.team.map((id) => {
+      const p = profileMap[id.toString()];
+      return { _id: id, name: p?.name || 'Name not found', email: p?.email || 'Email not found', avatar: p?.avatar || 'Avatar not found' };
+    });
 
-        // Check if the team is empty or undefined
-        if (!project.team || project.team.length === 0) {
-            return res.status(200).json({
-                project,
-                teamDetails: 'No team members found for this project.'
-            });
-        }
-
-        // Fetch profiles one by one using findById
-        const profilePromises = project.team.map(userId =>
-            Profile.findById(userId).select('name email avatar')
-        );
-
-
-        // Resolve all promises
-        const profiles = await Promise.all(profilePromises);
-
-        // Map profiles to their IDs for quick lookup
-        const profileMap = profiles.reduce((map, profile) => {
-            if (profile) { // Ensure profile is not null
-                map[profile._id.toString()] = profile;
-            }
-            return map;
-        }, {});
-        const populatedTeam = project.team.map(userId => {
-            const profile = profileMap[userId.toString()];
-            return {
-                _id: userId,
-                name: profile ? profile.name : 'Name not found',
-                email: profile ? profile.email : 'Email not found',
-                avatar: profile ? profile.avatar : 'Avatar not found'
-            };
-        });
-
-        //console.log(populatedTeam)
-        res.status(200).json({
-            project: {
-                ...project._doc,
-                team: populatedTeam
-            }
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Server error while fetching project details' });
-    }
-};
-
-// Fetch team members for a project
-exports.getTeamMembers = async (req, res) => {
-    const { projectId } = req.params;
-
-    try {
-        const project = await Project.findById(projectId).populate('team.userId');
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found.' });
-        }
-
-        const teamMembers = project.team.map(member => member.userId);
-        res.status(200).json(teamMembers);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch team members.' });
-    }
+    res.status(200).json({ project: { ...project, team: populatedTeam } });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error while fetching project details' });
+  }
 };

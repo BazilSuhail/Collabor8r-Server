@@ -6,80 +6,42 @@ const JoinProject = require('../models/joinProjects');
 
 exports.fetchAssignedTasks = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const assignedTasksDoc = await AssignedTasks.findById(req.user.id);
+    if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
 
-    const assignedTasksDoc = await AssignedTasks.findById(userId);
-    if (!assignedTasksDoc) {
-      return res.status(404).json({ error: 'No assigned tasks found' });
-    }
+    const tasks = await Tasks.find({ _id: { $in: assignedTasksDoc.assignTasks } });
+    const tasksWithProject = await Promise.all(tasks.map(async (task) => {
+      const project = await Project.findById(task.projectId);
+      return { ...task._doc, projectName: project ? project.name : 'No Project Assigned' };
+    }));
 
-    const taskIds = assignedTasksDoc.assignTasks;
-
-    // Fetch all tasks based on task IDs in assignedTasks
-    const tasks = await Tasks.find({ _id: { $in: taskIds } });
-
-    // For each task, fetch the project name from the project collection
-    const tasksWithProject = await Promise.all(
-      tasks.map(async (task) => {
-        const project = await Project.findById(task.projectId);
-        return {
-          ...task._doc, // Return task data along with the project name
-          projectName: project ? project.name : 'No Project Assigned',
-        };
-      })
-    );
-
-    // Return the tasks with project info
     res.status(200).json({ tasks: tasksWithProject });
-  }
-  catch (error) {
-    console.error(error);
+  } catch (err) {
     res.status(500).json({ error: 'Error fetching assigned tasks' });
   }
 };
 
 exports.fetchProgressOverview = async (req, res) => {
   try {
-    const userId = req.user.id; 
-    
-    const assignedTasksDoc = await AssignedTasks.findById(userId);
-    if (!assignedTasksDoc) {
-      return res.status(404).json({ error: 'No assigned tasks found' });
-    }
+    const [assignedTasksDoc, adminProjects, joinedProjects] = await Promise.all([
+      AssignedTasks.findById(req.user.id),
+      AdminProject.findById(req.user.id).select('projects -_id'),
+      JoinProject.findById(req.user.id).select('asManager projects -_id'),
+    ]);
 
-    const adminProjects = await AdminProject.findById(userId).select('projects -_id');
-    if (!assignedTasksDoc) {
-      return res.status(404).json({ error: 'No assigned tasks found' });
-    }
+    if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
 
-    const joinedProjects = await JoinProject.findById(userId).select('asManager projects -_id');
-    if (!assignedTasksDoc) {
-      return res.status(404).json({ error: 'No assigned tasks found' });
-    }
- 
-    const taskIds = assignedTasksDoc.assignTasks;
+    const tasks = await Tasks.find({ _id: { $in: assignedTasksDoc.assignTasks } }).select('title progress status').lean();
 
-    // Fetch all tasks using Promise.all and map with findById
-    const tasks = await Promise.all(
-      taskIds.map(async (taskId) => {
-        const task = await Tasks.findById(taskId).select('title progress status');
-        return task; // Return only title and progress
-      })
-    );
-    const projectCounts = {
-      adminProjectsCount: adminProjects.projects.length,
-      joinedProjectsCount: joinedProjects.projects.length,
-      managerProjectCount: joinedProjects.asManager.length,
-    } 
-    
     res.status(200).json({
-      projectCounts,
-      tasks
+      projectCounts: {
+        adminProjectsCount: adminProjects?.projects?.length || 0,
+        joinedProjectsCount: joinedProjects?.projects?.length || 0,
+        managerProjectCount: joinedProjects?.asManager?.length || 0,
+      },
+      tasks,
     });
-  }
-  catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error fetching assigned tasks' });
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching progress overview' });
   }
 };
-

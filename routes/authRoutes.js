@@ -1,18 +1,15 @@
-// routes/profileRoutes.js
 const express = require('express');
 const router = express.Router();
-const profileController = require('../controllers/authController');
-const authMiddleware = require('../middleware/authMiddleware');
+const ctrl = require('../controllers/authController');
 
-// Sign Up a new user
-router.post('/signup', profileController.signUp);
+router.post('/signup', ctrl.signUp);
+router.post('/signin', ctrl.signIn);
+router.post('/check-email', ctrl.checkEmailExists);
+router.post('/forgot-password', ctrl.forgotPassword);
+router.post('/reset-password', ctrl.resetPassword);
 
-router.post('/check-email', profileController.checkEmailExists);
-router.post('/reset-password', profileController.resetPassword);
-router.post('/forgot-password', profileController.forgotPassword);
-// Sign In an existing user
-router.post('/signin', profileController.signIn);
-
-// Get the current user's profile
+router.post('/send-code', ctrl.sendCode);
+router.post('/signup-code', ctrl.signUpWithCode);
+router.post('/signin-code', ctrl.signInWithCode);
 
 module.exports = router;

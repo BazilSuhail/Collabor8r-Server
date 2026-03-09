@@ -1,117 +1,82 @@
 const Task = require('../models/tasks');
 const Comment = require('../models/comments');
 const Profile = require('../models/profile');
+const { logActivity } = require('../utils/activityLogger');
+const { validate, required, isString } = require('../utils/validate');
 
-// Get comments for a specific task along with user details
 exports.getCommentsForTask = async (req, res) => {
   try {
-    const { taskId } = req.params;
+    const task = await Task.findById(req.params.taskId).lean();
+    if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    const task = await Task.findById(taskId).lean();
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
-
-    // Fetch comments for the task
     const comments = await Comment.find({ _id: { $in: task.comments } }).lean();
-
-    // Fetch user details for each comment
-    const commentsWithUserDetails = await Promise.all(comments.map(async (comment) => {
-      const user = await Profile.findById(comment.userId, 'name email avatar').lean();
-      return {
-        ...comment,
-        user: user || { name: 'Unknown', email: 'N/A', avatar: null }, // Fallback if user not found
-      };
+    const commentsWithUser = await Promise.all(comments.map(async (c) => {
+      const user = await Profile.findById(c.userId, 'name email avatar').lean();
+      return { ...c, user: user || { name: 'Unknown', email: 'N/A', avatar: null } };
     }));
 
-    res.status(200).json({ comments: commentsWithUserDetails });
+    res.status(200).json({ comments: commentsWithUser });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Failed to fetch task comments' });
+    res.status(500).json({ message: 'Failed to fetch comments' });
   }
 };
+
 exports.addCommentToTask = async (req, res) => {
-  const { taskId } = req.params;
-  const { content, userId } = req.body;
   try {
-    // Create the comment
-    const comment = new Comment({
-      content,
-      userId,
-      taskId,
-    });
+    const errors = validate({ content: [required, isString] }, req.body);
+    if (errors) return res.status(400).json({ errors });
 
+    const { taskId } = req.params;
+    const { content, userId } = req.body;
+
+    const comment = new Comment({ content, userId: userId || req.user.id, taskId });
     await comment.save();
-
-    // Add the comment ID as a string to the task's comments array
     await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id.toString() } });
+
+    await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, projectId: (await Task.findById(taskId).select('projectId').lean())?.projectId });
 
     res.status(201).json({ message: 'Comment added successfully.', comment });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Failed to add comment.' });
   }
 };
 
-// Edit a comment
 exports.editComment = async (req, res) => {
-  const { commentId } = req.params;
-  const { content } = req.body;
-
   try {
-    const comment = await Comment.findByIdAndUpdate(
-      commentId,
-      { content },
-      { new: true }
-    ).populate('userId', 'name');
+    const errors = validate({ content: [required, isString] }, req.body);
+    if (errors) return res.status(400).json({ errors });
 
-    if (!comment) {
-      return res.status(404).json({ error: 'Comment not found.' });
-    }
+    const comment = await Comment.findByIdAndUpdate(req.params.commentId, { content }, { new: true }).populate('userId', 'name');
+    if (!comment) return res.status(404).json({ error: 'Comment not found.' });
+
+    await logActivity({ actorId: req.user.id, action: 'comment_edited', entityType: 'comment', entityId: comment._id });
 
     res.status(200).json({ message: 'Comment updated successfully.', comment });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Failed to update comment.' });
   }
 };
 
-// Delete a comment
 exports.deleteComment = async (req, res) => {
-  const { commentId } = req.params;
-
   try {
-    const comment = await Comment.findByIdAndDelete(commentId);
+    const comment = await Comment.findByIdAndDelete(req.params.commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
-    if (!comment) {
-      return res.status(404).json({ error: 'Comment not found.' });
-    }
-
-    // Remove the comment ID from the associated task's comments array
-    await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: commentId } });
+    await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id.toString() } });
+    await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: req.params.commentId });
 
     res.status(200).json({ message: 'Comment deleted successfully.' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Failed to delete comment.' });
   }
 };
 
-// Controller to get the name of the user by ID
 exports.getProjectCreatorName = async (req, res) => {
-  const { id } = req.params;
-
   try {
-    // Find the profile by ID and return only the 'name' field
-    const profile = await Profile.findById(id).select('name');
-
-    if (!profile) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    return res.status(200).json({ name: profile.name });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: 'Server error' });
+    const profile = await Profile.findById(req.params.id).select('name');
+    if (!profile) return res.status(404).json({ message: 'User not found' });
+    res.status(200).json({ name: profile.name });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
   }
 };

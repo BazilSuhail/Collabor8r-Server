@@ -1,15 +1,12 @@
 const express = require('express');
 const { addCommentToTask, getCommentsForTask, editComment, deleteComment, getProjectCreatorName } = require('../controllers/commentsController');
 const router = express.Router();
-const authenticateUser = require('../middleware/authMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
 
-// Route to add a comment to a task
-router.post('/tasks/:taskId/comments', authenticateUser, addCommentToTask);
-
-// Route to get comments for a specific task
-router.get('/tasks/:taskId/comments', authenticateUser, getCommentsForTask);
-router.put('/:commentId', authenticateUser, editComment);
-router.delete('/:commentId', authenticateUser, deleteComment);
-router.get('/:id/name',getProjectCreatorName);
+router.post('/tasks/:taskId/comments', authMiddleware, addCommentToTask);
+router.get('/tasks/:taskId/comments', authMiddleware, getCommentsForTask);
+router.put('/:commentId', authMiddleware, editComment);
+router.delete('/:commentId', authMiddleware, deleteComment);
+router.get('/:id/name', authMiddleware, getProjectCreatorName);
 
 module.exports = router;

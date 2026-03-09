@@ -69,6 +69,15 @@ const taskSchema = new mongoose.Schema({
       ref: 'Label'
     }
   ],
+  attachments: [
+    {
+      name: String,
+      path: String,
+      size: Number,
+      mimetype: String,
+      uploadedAt: { type: Date, default: Date.now }
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now
