@@ -7,8 +7,9 @@ const profileSchema = new mongoose.Schema({
   },
   gender: {
     type: String,
-    enum: ['Male', 'Female', 'Other'],
-    required: true
+    enum: ['Male', 'Female', 'Other', 'male', 'female', 'other'],
+    required: true,
+    set: (v) => v.charAt(0).toUpperCase() + v.slice(1).toLowerCase(),
   },
   phone: {
     type: String,

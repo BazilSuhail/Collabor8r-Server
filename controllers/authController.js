@@ -30,7 +30,8 @@ exports.signUp = async (req, res) => {
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '8h' });
     res.status(201).json({ token });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('signUp error:', err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 };
 
@@ -46,7 +47,8 @@ exports.signIn = async (req, res) => {
     const token = jwt.sign({ id: profile._id }, process.env.JWT_SECRET, { expiresIn: '22h' });
     res.json({ token });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('signIn error:', err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 };
 
@@ -128,7 +130,8 @@ exports.sendCode = async (req, res) => {
 
     res.json({ success: true, message: 'Verification code sent' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to send code' });
+    console.error('sendCode error:', err);
+    res.status(500).json({ error: 'Failed to send code', detail: err.message });
   }
 };
 

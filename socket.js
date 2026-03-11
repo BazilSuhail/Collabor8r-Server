@@ -12,6 +12,8 @@ const initSocket = (server) => {
     },
   });
 
+  console.log("⚡ Socket.IO initialized and ready for connections");
+
   io.on("connection", (socket) => {
     const { userId } = socket.handshake.auth;
 

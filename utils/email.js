@@ -5,28 +5,19 @@ let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
 
-  if (process.env.EMAIL_HOST) {
-    transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-  } else {
-    const { TestAccount } = require('nodemailer');
-    console.warn('EMAIL_HOST not set — creating Ethereal test account. Check .env for real SMTP.');
-    transporter = nodemailer.createTransport({
-      host: 'sandbox.smtp.mailtrap.io',
-      port: 2525,
-      auth: {
-        user: process.env.MAILTRAP_USER || '',
-        pass: process.env.MAILTRAP_PASS || '',
-      },
-    });
+  if (!process.env.EMAIL_HOST) {
+    throw new Error('EMAIL_HOST not set in .env — configure Gmail SMTP to send emails');
   }
+
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT || '587'),
+    secure: process.env.EMAIL_SECURE === 'true',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
 
   return transporter;
 }
@@ -36,8 +27,7 @@ async function sendEmail({ to, subject, html }) {
   const from = process.env.EMAIL_FROM || 'noreply@collabor8r.app';
 
   const info = await transport.sendMail({ from, to, subject, html });
-  console.log(`Email sent: ${info.messageId}${info.messageId ? ' (preview: ' + nodemailer.getTestMessageUrl(info) + ')' : ''}`);
-
+  console.log(`Email sent to ${to}: ${info.messageId}`);
   return info;
 }
 

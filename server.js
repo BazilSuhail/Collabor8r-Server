@@ -17,6 +17,8 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+app.get('/', (req, res) => res.json({ status: 'ok', message: 'Collabora8r API is running', port: PORT }));
+
 app.use('/overview', require('./routes/dashboardRoutes'));
 app.use('/profile', require('./routes/profileRoutes'));
 app.use('/auth', require('./routes/authRoutes'));
@@ -43,4 +45,10 @@ app.use('/uploads', require('./routes/uploadRoutes'));
 app.use('/ai', require('./routes/aiRoutes'));
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Socket Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log('═══════════════════════════════════════════');
+  console.log(`  🚀  REST API  →  http://localhost:${PORT}`);
+  console.log(`  ⚡  Socket.IO →  ws://localhost:${PORT}`);
+  console.log(`  📁  Uploads   →  http://localhost:${PORT}/uploads`);
+  console.log('═══════════════════════════════════════════');
+});
