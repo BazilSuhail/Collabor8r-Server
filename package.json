@@ -1,13 +1,13 @@
 {
   "name": "collabora8r-server",
   "version": "1.0.0",
-  "main": "Server.js",
+  "main": "server.js",
   "scripts": {
-    "dev": "nodemon Server.js",
+    "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "collabora8r",
   "license": "ISC",
   "description": "",
   "dependencies": {
