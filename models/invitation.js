@@ -4,7 +4,9 @@ const crypto = require('crypto');
 const invitationSchema = new mongoose.Schema({
   email: {
     type: String,
-    required: true
+    required: true,
+    lowercase: true,
+    trim: true
   },
   projectId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -19,6 +21,28 @@ const invitationSchema = new mongoose.Schema({
     ref: 'Profile',
     required: true
   },
+  senderName: {
+    type: String
+  },
+  senderEmail: {
+    type: String
+  },
+  senderAvatar: {
+    type: String
+  },
+  projectName: {
+    type: String
+  },
+  projectDescription: {
+    type: String
+  },
+  type: {
+    type: String,
+    enum: ['teamMember', 'projectManager', 'organization'],
+  },
+  description: {
+    type: String
+  },
   role: {
     type: String
   },
@@ -26,6 +50,9 @@ const invitationSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'accepted', 'declined', 'expired'],
     default: 'pending'
+  },
+  respondedAt: {
+    type: Date
   },
   token: {
     type: String,

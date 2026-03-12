@@ -8,12 +8,17 @@ const { dispatchWebhook } = require('../utils/webhookDispatcher');
 async function createTask(data, userId) {
   const { title, description, status, priority, dueDate, assignedTo, projectId, sprintId, parentId, estimateHours, labels } = data;
 
-  const newTask = new Task({
+  const taskData = {
     title, description, status, priority,
     progress: 0,
-    assignedTo, dueDate, projectId,
-    sprintId, parentId, estimateHours, labels,
-  });
+    dueDate, projectId, labels,
+  };
+  if (assignedTo) taskData.assignedTo = assignedTo;
+  if (sprintId) taskData.sprintId = sprintId;
+  if (parentId) taskData.parentId = parentId;
+  if (estimateHours) taskData.estimateHours = Number(estimateHours);
+
+  const newTask = new Task(taskData);
 
   const savedTask = await newTask.save();
 
@@ -42,6 +47,7 @@ async function createTask(data, userId) {
     action: 'created',
     entityType: 'task',
     entityId: savedTask._id,
+    entityName: title,
     projectId,
     description: `Task "${title}" created`,
   });
@@ -94,6 +100,7 @@ async function updateTask(taskId, data, userId) {
     action: 'updated',
     entityType: 'task',
     entityId: taskId,
+    entityName: task.title,
     projectId: task.projectId,
     changes,
     description: `Task "${task.title}" updated`,
@@ -117,6 +124,7 @@ async function deleteTask(taskId, userId) {
     action: 'deleted',
     entityType: 'task',
     entityId: taskId,
+    entityName: task.title,
     projectId: task.projectId,
     description: `Task "${task.title}" deleted`,
   });

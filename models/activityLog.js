@@ -6,6 +6,12 @@ const activityLogSchema = new mongoose.Schema({
     ref: 'Profile',
     required: true
   },
+  actorName: {
+    type: String
+  },
+  actorAvatar: {
+    type: String
+  },
   action: {
     type: String,
     required: true,
@@ -20,9 +26,15 @@ const activityLogSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     required: true
   },
+  entityName: {
+    type: String
+  },
   projectId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project'
+  },
+  projectName: {
+    type: String
   },
   changes: [
     {

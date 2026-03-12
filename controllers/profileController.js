@@ -1,5 +1,5 @@
 const Profile = require('../models/profile');
-const { getNotifications } = require('../services/notificationService');
+const { getNotifications, markAsRead, getUnreadCount } = require('../services/notificationService');
 
 exports.getProfile = async (req, res) => {
   try {
@@ -28,5 +28,24 @@ exports.getNotifications = async (req, res) => {
     res.status(200).json(notifications);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+exports.markNotificationsRead = async (req, res) => {
+  try {
+    const { index } = req.body;
+    const result = await markAsRead(req.user.id, index);
+    res.status(200).json({ message: 'Notifications marked as read', result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark notifications as read' });
+  }
+};
+
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const count = await getUnreadCount(req.user.id);
+    res.status(200).json({ unreadCount: count });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get unread count' });
   }
 };

@@ -18,6 +18,7 @@ exports.createTask = async (req, res) => {
     const task = await taskService.createTask(req.body, req.user.id);
     res.status(201).json(task);
   } catch (err) {
+    console.error('❌ createTask:', err.message, err.stack);
     res.status(500).json({ error: 'Failed to create task' });
   }
 };

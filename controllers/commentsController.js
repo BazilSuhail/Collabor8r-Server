@@ -33,7 +33,7 @@ exports.addCommentToTask = async (req, res) => {
     await comment.save();
     await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id.toString() } });
 
-    await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, projectId: (await Task.findById(taskId).select('projectId').lean())?.projectId });
+    await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, entityName: content?.slice(0, 50), projectId: (await Task.findById(taskId).select('projectId').lean())?.projectId });
 
     res.status(201).json({ message: 'Comment added successfully.', comment });
   } catch (err) {
@@ -49,7 +49,7 @@ exports.editComment = async (req, res) => {
     const comment = await Comment.findByIdAndUpdate(req.params.commentId, { content }, { new: true }).populate('userId', 'name');
     if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
-    await logActivity({ actorId: req.user.id, action: 'comment_edited', entityType: 'comment', entityId: comment._id });
+    await logActivity({ actorId: req.user.id, action: 'comment_edited', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
 
     res.status(200).json({ message: 'Comment updated successfully.', comment });
   } catch (err) {
@@ -63,7 +63,7 @@ exports.deleteComment = async (req, res) => {
     if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
     await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id.toString() } });
-    await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: req.params.commentId });
+    await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
 
     res.status(200).json({ message: 'Comment deleted successfully.' });
   } catch (err) {

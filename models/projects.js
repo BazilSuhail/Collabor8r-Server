@@ -24,7 +24,7 @@ const projectSchema = new mongoose.Schema({
     },
     email: {
       type: String,
-      required: true
+      default: ''
     },
     status: {
       type: String,

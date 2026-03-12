@@ -27,7 +27,9 @@
 |--------|----------|------|------|----------|-------------|
 | GET | `/profile/` | Yes | — | Profile object | Get current user's profile |
 | PUT | `/profile/` | Yes | `{ name?, gender?, phone?, email?, dob?, avatar? }` | Updated profile | Update profile fields |
-| GET | `/profile/get-notifications` | Yes | — | `[{ type, data, read, createdAt }]` | Get user's notifications |
+| GET | `/profile/get-notifications` | Yes | — | `[{ _id, type, data, read, createdAt }]` | Get user's notifications |
+| PUT | `/profile/notifications/mark-read` | Yes | `{ notificationIds: [String] }` | `{ message }` | Mark specific notifications as read |
+| GET | `/profile/notifications/unread-count` | Yes | — | `{ count: Number }` | Get count of unread notifications |
 
 ---
 

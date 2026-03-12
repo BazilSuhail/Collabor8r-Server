@@ -78,24 +78,11 @@ const taskSchema = new mongoose.Schema({
       uploadedAt: { type: Date, default: Date.now }
     }
   ],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
   comments: [
     {
       type: String,
     },
   ],
-});
-
-taskSchema.pre('save', function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('Task', taskSchema);

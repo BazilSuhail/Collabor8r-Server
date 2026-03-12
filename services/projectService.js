@@ -2,13 +2,16 @@ const Project = require('../models/projects');
 const AdminProject = require('../models/adminProjects');
 const JoinProject = require('../models/joinProjects');
 const Profile = require('../models/profile');
+const Invitation = require('../models/invitation');
 const Notification = require('../models/notifications');
 const { logActivity } = require('../utils/activityLogger');
 const { dispatchWebhook } = require('../utils/webhookDispatcher');
 const { sendNotification } = require('./notificationService');
+const { sendInvitationEvent } = require('../socket');
 
 async function createProject(data, userId) {
   const { name, description, projectManagerEmail, theme, organizationId } = data;
+  console.log(`📋 createProject called — name: "${name}", managerEmail: "${projectManagerEmail || '(none)'}", userId: ${userId}`);
 
   const newProject = new Project({
     name, theme, description,
@@ -27,14 +30,49 @@ async function createProject(data, userId) {
   await adminProject.save();
 
   if (projectManagerEmail) {
-    const pmProfile = await Profile.findOne({ email: projectManagerEmail });
+    console.log(`🔍 Looking for manager email: "${projectManagerEmail}"`);
+    const [pmProfile, sender] = await Promise.all([
+      Profile.findOne({ email: projectManagerEmail }).select('_id email'),
+      Profile.findById(userId).select('name email avatar'),
+    ]);
+
     if (pmProfile) {
-      await sendNotification(pmProfile._id, 'projectManager', {
-        description: `You have been assigned as project manager for "${name}"`,
-        from: userId,
+      console.log(`✅ Found manager profile: ${pmProfile.email} (${pmProfile._id})`);
+      console.log(`📨 Creating invitation for manager: ${pmProfile.email}`);
+      const desc = `${sender?.name || 'Someone'} has invited you as Project Manager for "${name}"`;
+      const invite = new Invitation({
+        email: pmProfile.email,
         projectId: newProject._id,
+        projectName: name,
+        projectDescription: description,
+        invitedBy: userId,
+        type: 'projectManager',
+        role: 'manager',
+        senderName: sender?.name || 'Someone',
+        senderEmail: sender?.email || '',
+        senderAvatar: sender?.avatar || '',
+        description: desc,
       });
+      await invite.save();
+      console.log(`✅ Invitation saved with id: ${invite._id}, token: ${invite.token}`);
+
+      sendInvitationEvent(pmProfile._id, invite);
+      console.log(`📡 Invitation event sent to ${pmProfile._id}`);
+
+      await sendNotification(pmProfile._id, 'projectManager', {
+        projectId: newProject._id,
+        projectName: name,
+        from: userId,
+        senderName: sender?.name || 'Someone',
+        senderEmail: sender?.email || '',
+        title: `Manager invitation from ${sender?.name || 'Someone'}`,
+        description: `${sender?.name || 'Someone'} has invited you as Manager for "${name}"`,
+      });
+    } else {
+      console.log(`❌ Manager profile NOT found for email: "${projectManagerEmail}"`);
     }
+  } else {
+    console.log(`ℹ️ No projectManagerEmail provided — skipping manager invitation`);
   }
 
   await logActivity({
@@ -42,7 +80,9 @@ async function createProject(data, userId) {
     action: 'created',
     entityType: 'project',
     entityId: newProject._id,
+    entityName: name,
     projectId: newProject._id,
+    projectName: name,
     description: `Project "${name}" created`,
   });
 
@@ -75,7 +115,9 @@ async function addTeamMember(projectId, memberId, userId) {
     action: 'updated',
     entityType: 'project',
     entityId: projectId,
+    entityName: project.name,
     projectId,
+    projectName: project.name,
     description: `Member added to project "${project.name}"`,
   });
 

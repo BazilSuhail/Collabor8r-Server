@@ -49,7 +49,7 @@ exports.updateTaskStatusAndProgress = async (req, res) => {
     const updatedTask = await Task.findByIdAndUpdate(req.params.taskId, req.body, { new: true });
     if (!updatedTask) return res.status(404).json({ success: false, message: 'Task not found' });
 
-    await logActivity({ actorId: req.user.id, action: 'updated', entityType: 'task', entityId: req.params.taskId, projectId: updatedTask.projectId, changes: [{ field: 'status', newValue: req.body.status }, { field: 'progress', newValue: req.body.progress }] });
+    await logActivity({ actorId: req.user.id, action: 'updated', entityType: 'task', entityId: req.params.taskId, entityName: updatedTask.title, projectId: updatedTask.projectId, changes: [{ field: 'status', newValue: req.body.status }, { field: 'progress', newValue: req.body.progress }] });
 
     res.status(200).json({ success: true, message: 'Task updated', updatedTask });
   } catch (err) {

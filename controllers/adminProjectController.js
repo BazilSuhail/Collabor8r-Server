@@ -2,7 +2,9 @@ const Profile = require('../models/profile');
 const Project = require('../models/projects');
 const Task = require('../models/tasks');
 const AdminProject = require('../models/adminProjects');
+const Invitation = require('../models/invitation');
 const { sendNotification } = require('../services/notificationService');
+const { sendInvitationEvent } = require('../socket');
 
 exports.getCreatedProjects = async (req, res) => {
   try {
@@ -62,18 +64,51 @@ exports.searchUserByEmail = async (req, res) => {
 exports.addMemberToTeam = async (req, res) => {
   try {
     const { userId, projectId } = req.body;
-    const sender = await Profile.findById(req.user.id).select('name');
-    const projectTitleDoc = await Project.findById(projectId).select('name');
+    if (!userId || !projectId) return res.status(400).json({ error: 'userId and projectId are required' });
+
+    const [userToInvite, sender, project] = await Promise.all([
+      Profile.findById(userId).select('name email avatar'),
+      Profile.findById(req.user.id).select('name email avatar'),
+      Project.findById(projectId).select('name description'),
+    ]);
+
+    if (!userToInvite) return res.status(404).json({ error: 'No user found with this id' });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const message = req.body.message || '';
+    const customMsg = message ? ` — ${message}` : '';
+    const desc = `${sender?.name || 'Someone'} has invited you to join "${project.name}"${customMsg}`;
+
+    const invite = new Invitation({
+      email: userToInvite.email,
+      projectId,
+      projectName: project.name,
+      projectDescription: project.description,
+      invitedBy: req.user.id,
+      type: 'teamMember',
+      role: req.body.role || 'member',
+      senderName: sender?.name || 'Someone',
+      senderEmail: sender?.email || '',
+      senderAvatar: sender?.avatar || '',
+      description: desc,
+    });
+    await invite.save();
+
+    sendInvitationEvent(userId, invite);
 
     await sendNotification(userId, 'teamMember', {
       projectId,
+      projectName: project.name,
       from: req.user.id,
-      title: `Project invitation from ${sender.name}`,
-      description: `${sender.name} has invited you to join "${projectTitleDoc?.name}"`,
+      senderName: sender?.name || 'Someone',
+      senderEmail: sender?.email || '',
+      title: `Project invitation from ${sender?.name || 'Someone'}`,
+      description: `${sender?.name || 'Someone'} has invited you to join "${project.name}"${message ? ': ' + message : ''}`,
     });
 
-    res.status(200).json({ message: 'Invitation sent' });
+    res.status(200).json({ message: 'Invitation sent', invitation: invite });
   } catch (err) {
+    console.error('addMemberToTeam error:', err);
     res.status(500).json({ error: 'Failed to send invitation.' });
   }
 };

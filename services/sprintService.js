@@ -25,6 +25,7 @@ async function createSprint(data, userId) {
     action: 'created',
     entityType: 'sprint',
     entityId: sprint._id,
+    entityName: sprint.name,
     projectId: data.projectId,
     description: `Sprint "${sprint.name}" created`,
   });
@@ -75,6 +76,7 @@ async function completeSprint(sprintId, userId) {
     action: 'updated',
     entityType: 'sprint',
     entityId: sprintId,
+    entityName: sprint.name,
     projectId: sprint.projectId,
     description: `Sprint "${sprint.name}" completed`,
   });

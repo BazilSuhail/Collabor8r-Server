@@ -39,6 +39,8 @@ async function sendVerificationCode(email, code, purpose) {
   const labels = { registration: 'Registration', login: 'Login', 'password-reset': 'Password Reset' };
   const label = labels[purpose] || 'Verification';
 
+  console.log(`[${label}] Verification code for ${email}: ${code}`);
+
   return sendEmail({
     to: email,
     subject: `Your ${label} Code — Collabora8r`,
