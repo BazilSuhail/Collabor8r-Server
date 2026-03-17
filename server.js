@@ -17,7 +17,21 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.get('/', (req, res) => res.json({ status: 'ok', message: 'Collabora8r API is running', port: PORT }));
+app.get('/health', (req, res) => {
+  const memory = process.memoryUsage();
+  console.log(`Memory usage: RSS ${Math.round(memory.rss / 1024 / 1024 * 100) / 100} MB | Heap ${Math.round(memory.heapUsed / 1024 / 1024 * 100) / 100}/${Math.round(memory.heapTotal / 1024 / 1024 * 100) / 100} MB`)
+  res.json({
+    status: 'ok',
+    message: 'Collabor8r API is running',
+    port: PORT,
+    memory: {
+      rss: Math.round(memory.rss / 1024 / 1024 * 100) / 100 + ' MB',
+      heapTotal: Math.round(memory.heapTotal / 1024 / 1024 * 100) / 100 + ' MB',
+      heapUsed: Math.round(memory.heapUsed / 1024 / 1024 * 100) / 100 + ' MB',
+      external: Math.round(memory.external / 1024 / 1024 * 100) / 100 + ' MB'
+    }
+  });
+});
 
 app.use('/overview', require('./routes/dashboardRoutes'));
 app.use('/profile', require('./routes/profileRoutes'));
@@ -46,9 +60,11 @@ app.use('/ai', require('./routes/aiRoutes'));
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
+  const mem = process.memoryUsage();
   console.log('═══════════════════════════════════════════');
   console.log(`  🚀  REST API  →  http://localhost:${PORT}`);
   console.log(`  ⚡  Socket.IO →  ws://localhost:${PORT}`);
   console.log(`  📁  Uploads   →  http://localhost:${PORT}/uploads`);
+  console.log(`  💾  Memory    →  RSS ${Math.round(mem.rss / 1024 / 1024 * 100) / 100} MB | Heap ${Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100}/${Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100} MB`);
   console.log('═══════════════════════════════════════════');
 });
