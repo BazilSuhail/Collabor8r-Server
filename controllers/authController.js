@@ -7,13 +7,28 @@ const JoinProject = require('../models/joinProjects');
 const Notification = require('../models/notifications');
 const VerificationCode = require('../models/verificationCode');
 const { generateCode, sendVerificationCode } = require('../utils/email');
-const { validate, required, isString, isEmail } = require('../utils/validate');
+const { validate, required, isString, isEmail, isDate, minLength } = require('../utils/validate');
 
 exports.signUp = async (req, res) => {
   const { name, gender, phone, email, dob, password } = req.body;
   try {
+    const errors = validate({
+      name: [required, isString],
+      gender: [required, isString],
+      phone: [required, isString],
+      email: [required, isString, isEmail],
+      dob: [required, isDate],
+      password: [required, isString, (v, f) => minLength(v, f, 6)],
+    }, req.body);
+    if (errors) return res.status(400).json({ error: 'Validation failed', errors });
+
+    const normalizedGender = String(gender).charAt(0).toUpperCase() + String(gender).slice(1).toLowerCase();
+    if (!['Male', 'Female', 'Other'].includes(normalizedGender)) {
+      return res.status(400).json({ error: 'Validation failed', errors: ['gender must be one of: Male, Female, Other'] });
+    }
+
     let profile = await Profile.findOne({ email });
-    if (profile) return res.status(400).json({ error: 'User already exists' });
+    if (profile) return res.status(400).json({ error: 'Email already registered', field: 'email' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     profile = new Profile({ name, gender, phone, email, dob, password: hashedPassword });
@@ -23,12 +38,12 @@ exports.signUp = async (req, res) => {
     await Promise.all([
       new AssignedTask({ _id: userId, assignTasks: [] }).save(),
       new AdminProject({ _id: userId, projects: [] }).save(),
-      new JoinProject({ _id: userId, projects: [], asManager: [] }).save(),
+      new JoinProject({ _id: userId, projects: [], asLead: [] }).save(),
       new Notification({ _id: userId, notifications: [] }).save(),
     ]);
 
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '8h' });
-    res.status(201).json({ token });
+    res.status(201).json({ token, message: 'Account created successfully' });
   } catch (err) {
     console.error('signUp error:', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
@@ -163,7 +178,7 @@ exports.signUpWithCode = async (req, res) => {
     await Promise.all([
       new AssignedTask({ _id: userId, assignTasks: [] }).save(),
       new AdminProject({ _id: userId, projects: [] }).save(),
-      new JoinProject({ _id: userId, projects: [], asManager: [] }).save(),
+      new JoinProject({ _id: userId, projects: [], asLead: [] }).save(),
       new Notification({ _id: userId, notifications: [] }).save(),
     ]);
 

@@ -5,6 +5,7 @@
 
 const BoardConfig = require('../models/boardConfig');
 const { validate, required, isString, isArray } = require('../utils/validate');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.getProjectBoards = async (req, res) => {
   try {
@@ -35,6 +36,17 @@ exports.createBoard = async (req, res) => {
 
     const board = new BoardConfig(data);
     await board.save();
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'created',
+      entityType: 'board',
+      entityId: board._id,
+      entityName: board.name || 'Board',
+      projectId: board.projectId,
+      description: `Board "${board.name || 'Board'}" created`,
+    });
+
     res.status(201).json(board);
   } catch (err) {
     console.error('❌ createBoard:', err.message, err.stack);
@@ -57,6 +69,17 @@ exports.updateBoard = async (req, res) => {
     }
     const board = await BoardConfig.findByIdAndUpdate(req.params.boardId, data, { new: true });
     if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'updated',
+      entityType: 'board',
+      entityId: board._id,
+      entityName: board.name || 'Board',
+      projectId: board.projectId,
+      description: `Board "${board.name || 'Board'}" updated`,
+    });
+
     res.json(board);
   } catch (err) {
     console.error('❌ updateBoard:', err.message, err.stack);
@@ -68,6 +91,17 @@ exports.deleteBoard = async (req, res) => {
   try {
     const board = await BoardConfig.findByIdAndDelete(req.params.boardId);
     if (!board) return res.status(404).json({ error: 'Board not found' });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'deleted',
+      entityType: 'board',
+      entityId: req.params.boardId,
+      entityName: board.name || 'Board',
+      projectId: board.projectId,
+      description: `Board "${board.name || 'Board'}" deleted`,
+    });
+
     res.json({ message: 'Board deleted' });
   } catch (err) {
     console.error('❌ deleteBoard:', err.message, err.stack);

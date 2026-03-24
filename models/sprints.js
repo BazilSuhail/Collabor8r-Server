@@ -35,10 +35,20 @@ const sprintSchema = new mongoose.Schema({
       ref: 'Task'
     }
   ],
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true, versionKey: false },
+  toObject: { virtuals: true, versionKey: false }
+});
+
+sprintSchema.virtual('status').get(function () {
+  if (this.isCompleted) return 'completed';
+  if (this.isActive) return 'active';
+  return 'planned';
+});
+
+sprintSchema.virtual('taskCount').get(function () {
+  return (this.tasks || []).length;
 });
 
 module.exports = mongoose.model('Sprint', sprintSchema);

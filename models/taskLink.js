@@ -21,6 +21,6 @@ const taskLinkSchema = new mongoose.Schema({
     ref: 'Project',
     required: true
   }
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('TaskLink', taskLinkSchema);

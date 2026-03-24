@@ -5,6 +5,7 @@
 
 const SavedFilter = require('../models/savedFilter');
 const { validate, required, isString, isBoolean } = require('../utils/validate');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.getProjectFilters = async (req, res) => {
   try {
@@ -25,6 +26,17 @@ exports.createFilter = async (req, res) => {
 
     const filter = new SavedFilter({ ...req.body, userId: req.user.id });
     await filter.save();
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'created',
+      entityType: 'filter',
+      entityId: filter._id,
+      entityName: filter.name,
+      projectId: filter.projectId,
+      description: `Filter "${filter.name}" saved`,
+    });
+
     res.status(201).json(filter);
   } catch (err) {
     res.status(500).json({ error: 'Failed to save filter' });
@@ -39,6 +51,17 @@ exports.updateFilter = async (req, res) => {
       { new: true }
     );
     if (!filter) return res.status(404).json({ error: 'Filter not found' });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'updated',
+      entityType: 'filter',
+      entityId: filter._id,
+      entityName: filter.name,
+      projectId: filter.projectId,
+      description: `Filter "${filter.name}" updated`,
+    });
+
     res.json(filter);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update filter' });
@@ -49,6 +72,17 @@ exports.deleteFilter = async (req, res) => {
   try {
     const filter = await SavedFilter.findOneAndDelete({ _id: req.params.filterId, userId: req.user.id });
     if (!filter) return res.status(404).json({ error: 'Filter not found' });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'deleted',
+      entityType: 'filter',
+      entityId: req.params.filterId,
+      entityName: filter.name,
+      projectId: filter.projectId,
+      description: `Filter "${filter.name}" deleted`,
+    });
+
     res.json({ message: 'Filter deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete filter' });

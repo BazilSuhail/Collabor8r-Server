@@ -49,14 +49,12 @@ app.use('/sprints', require('./routes/sprintRoutes'));
 app.use('/activity', require('./routes/activityRoutes'));
 app.use('/time', require('./routes/timeRoutes'));
 app.use('/task-links', require('./routes/taskLinkRoutes'));
+app.use('/ai', require('./routes/aiRoutes'));
 app.use('/filters', require('./routes/filterRoutes'));
 app.use('/boards', require('./routes/boardRoutes'));
 app.use('/labels', require('./routes/labelRoutes'));
-app.use('/webhooks', require('./routes/webhookRoutes'));
-app.use('/organizations', require('./routes/organizationRoutes'));
 app.use('/invitations', require('./routes/invitationRoutes'));
 app.use('/uploads', require('./routes/uploadRoutes'));
-app.use('/ai', require('./routes/aiRoutes'));
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

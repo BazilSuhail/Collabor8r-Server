@@ -12,10 +12,6 @@ const invitationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project'
   },
-  organizationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization'
-  },
   invitedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Profile',
@@ -38,7 +34,7 @@ const invitationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['teamMember', 'projectManager', 'organization'],
+    enum: ['teamMember', 'projectLead'],
   },
   description: {
     type: String

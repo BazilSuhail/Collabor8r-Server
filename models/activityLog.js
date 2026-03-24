@@ -15,12 +15,12 @@ const activityLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['created', 'updated', 'deleted', 'assigned', 'unassigned', 'status_changed', 'comment_added', 'comment_edited', 'comment_deleted', 'uploaded']
+    enum: ['created', 'updated', 'deleted', 'assigned', 'unassigned', 'status_changed', 'comment_added', 'comment_edited', 'comment_deleted', 'uploaded', 'completed', 'activated', 'accepted', 'declined', 'invited', 'logged', 'removed']
   },
   entityType: {
     type: String,
     required: true,
-    enum: ['task', 'project', 'comment', 'sprint', 'label']
+    enum: ['task', 'project', 'comment', 'sprint', 'label', 'board', 'time', 'taskLink', 'invitation', 'filter']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,

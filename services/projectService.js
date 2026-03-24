@@ -5,19 +5,31 @@ const Profile = require('../models/profile');
 const Invitation = require('../models/invitation');
 const Notification = require('../models/notifications');
 const { logActivity } = require('../utils/activityLogger');
-const { dispatchWebhook } = require('../utils/webhookDispatcher');
 const { sendNotification } = require('./notificationService');
 const { sendInvitationEvent } = require('../socket');
 
 async function createProject(data, userId) {
-  const { name, description, projectManagerEmail, theme, organizationId } = data;
-  console.log(`📋 createProject called — name: "${name}", managerEmail: "${projectManagerEmail || '(none)'}", userId: ${userId}`);
+  const {
+    name, description, leadEmail, theme,
+    about, objectives, tags, category, links,
+    visibility, status, startDate, targetDate, version, methodology,
+  } = data;
 
   const newProject = new Project({
     name, theme, description,
     createdBy: userId,
-    projectManager: { email: projectManagerEmail || '', status: 'Pending' },
-    organizationId,
+    owner: userId,
+    about: about || '',
+    objectives: Array.isArray(objectives) ? objectives : [],
+    tags: Array.isArray(tags) ? tags : [],
+    category: category || 'other',
+    links: Array.isArray(links) ? links : [],
+    visibility: visibility || 'private',
+    status: status || 'planning',
+    startDate: startDate || null,
+    targetDate: targetDate || null,
+    version: version || 'v1.0',
+    methodology: methodology || 'sprint',
   });
 
   await newProject.save();
@@ -29,50 +41,44 @@ async function createProject(data, userId) {
   adminProject.projects.push(newProject._id);
   await adminProject.save();
 
-  if (projectManagerEmail) {
-    console.log(`🔍 Looking for manager email: "${projectManagerEmail}"`);
-    const [pmProfile, sender] = await Promise.all([
-      Profile.findOne({ email: projectManagerEmail }).select('_id email'),
+  if (leadEmail) {
+    const [leadProfile, sender] = await Promise.all([
+      Profile.findOne({ email: leadEmail }).select('_id email'),
       Profile.findById(userId).select('name email avatar'),
     ]);
 
-    if (pmProfile) {
-      console.log(`✅ Found manager profile: ${pmProfile.email} (${pmProfile._id})`);
-      console.log(`📨 Creating invitation for manager: ${pmProfile.email}`);
-      const desc = `${sender?.name || 'Someone'} has invited you as Project Manager for "${name}"`;
+    if (leadProfile) {
+      newProject.leads.push(leadProfile._id);
+      await newProject.save();
+
+      const desc = `${sender?.name || 'Someone'} has invited you as Project Lead for "${name}"`;
       const invite = new Invitation({
-        email: pmProfile.email,
+        email: leadProfile.email,
         projectId: newProject._id,
         projectName: name,
         projectDescription: description,
         invitedBy: userId,
-        type: 'projectManager',
-        role: 'manager',
+        type: 'projectLead',
+        role: 'lead',
         senderName: sender?.name || 'Someone',
         senderEmail: sender?.email || '',
         senderAvatar: sender?.avatar || '',
         description: desc,
       });
       await invite.save();
-      console.log(`✅ Invitation saved with id: ${invite._id}, token: ${invite.token}`);
 
-      sendInvitationEvent(pmProfile._id, invite);
-      console.log(`📡 Invitation event sent to ${pmProfile._id}`);
+      sendInvitationEvent(leadProfile._id, invite);
 
-      await sendNotification(pmProfile._id, 'projectManager', {
+      await sendNotification(leadProfile._id, 'projectLead', {
         projectId: newProject._id,
         projectName: name,
         from: userId,
         senderName: sender?.name || 'Someone',
         senderEmail: sender?.email || '',
-        title: `Manager invitation from ${sender?.name || 'Someone'}`,
-        description: `${sender?.name || 'Someone'} has invited you as Manager for "${name}"`,
+        title: `Lead invitation from ${sender?.name || 'Someone'}`,
+        description: `${sender?.name || 'Someone'} has invited you as Lead for "${name}"`,
       });
-    } else {
-      console.log(`❌ Manager profile NOT found for email: "${projectManagerEmail}"`);
     }
-  } else {
-    console.log(`ℹ️ No projectManagerEmail provided — skipping manager invitation`);
   }
 
   await logActivity({
@@ -85,8 +91,6 @@ async function createProject(data, userId) {
     projectName: name,
     description: `Project "${name}" created`,
   });
-
-  await dispatchWebhook('project.created', { project: newProject });
 
   return newProject;
 }

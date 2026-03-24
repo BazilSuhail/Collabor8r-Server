@@ -4,7 +4,7 @@ const Project = require('../models/projects');
 const AdminProject = require('../models/adminProjects');
 const JoinProject = require('../models/joinProjects');
 
-exports.fetchAssignedTasks = async (req, res) => {
+exports.fetchAssignedTasks = async (req, res) => {  
   try {
     const assignedTasksDoc = await AssignedTasks.findById(req.user.id);
     if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
@@ -26,7 +26,7 @@ exports.fetchProgressOverview = async (req, res) => {
     const [assignedTasksDoc, adminProjects, joinedProjects] = await Promise.all([
       AssignedTasks.findById(req.user.id),
       AdminProject.findById(req.user.id).select('projects -_id'),
-      JoinProject.findById(req.user.id).select('asManager projects -_id'),
+      JoinProject.findById(req.user.id).select('asLead projects -_id'),
     ]);
 
     if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
@@ -37,7 +37,7 @@ exports.fetchProgressOverview = async (req, res) => {
       projectCounts: {
         adminProjectsCount: adminProjects?.projects?.length || 0,
         joinedProjectsCount: joinedProjects?.projects?.length || 0,
-        managerProjectCount: joinedProjects?.asManager?.length || 0,
+        leadProjectCount: joinedProjects?.asLead?.length || 0,
       },
       tasks,
     });

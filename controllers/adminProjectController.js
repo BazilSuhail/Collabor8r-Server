@@ -5,14 +5,60 @@ const AdminProject = require('../models/adminProjects');
 const Invitation = require('../models/invitation');
 const { sendNotification } = require('../services/notificationService');
 const { sendInvitationEvent } = require('../socket');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.getCreatedProjects = async (req, res) => {
   try {
     const adminProjects = await AdminProject.findById(req.user.id);
     if (!adminProjects) return res.status(404).json({ error: 'Admin projects not found.' });
 
-    const projects = await Promise.all(adminProjects.projects.map((id) => Project.findById(id)));
-    res.status(200).json(projects.filter(Boolean));
+    const projects = await Promise.all(adminProjects.projects.map((id) => Project.findById(id).lean()));
+    const projectList = projects.filter(Boolean);
+
+    const leadIds = [...new Set(projectList.flatMap((p) => p.leads || []))];
+    const leads = leadIds.length
+      ? await Profile.find({ _id: { $in: leadIds } }).select('name email avatar').lean()
+      : [];
+    const leadMap = Object.fromEntries(leads.map((l) => [l._id.toString(), l]));
+
+    const createdByMap = {};
+    for (const p of projectList) {
+      if (p.createdBy && !createdByMap[p.createdBy.toString()]) {
+        const creator = await Profile.findById(p.createdBy).select('name email avatar').lean();
+        createdByMap[p.createdBy.toString()] = creator;
+      }
+    }
+
+    const result = await Promise.all(projectList.map(async (project) => {
+      const taskStatuses = { 'Not Started': 0, 'In Progress': 0, Paused: 0, Completed: 0 };
+      let progressSum = 0;
+      const taskIds = project.tasks || [];
+
+      if (taskIds.length) {
+        const tasks = await Task.find({ _id: { $in: taskIds } }).select('status progress').lean();
+        for (const t of tasks) {
+          taskStatuses[t.status] = (taskStatuses[t.status] || 0) + 1;
+          progressSum += t.progress || 0;
+        }
+      }
+
+      return {
+        ...project,
+        leads: (project.leads || []).map((id) => leadMap[id.toString()] || id),
+        createdBy: createdByMap[project.createdBy?.toString()] || null,
+        taskCount: taskIds.length,
+        teamCount: project.team?.length || 0,
+        stats: {
+          notStarted: taskStatuses['Not Started'],
+          inProgress: taskStatuses['In Progress'],
+          paused: taskStatuses.Paused,
+          completed: taskStatuses.Completed,
+          avgProgress: taskIds.length ? Math.round(progressSum / taskIds.length) : 0,
+        },
+      };
+    }));
+
+    res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -23,14 +69,16 @@ exports.getProjectDetails = async (req, res) => {
     const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const [teamDetails, taskDetails] = await Promise.all([
+    const [teamDetails, taskDetails, leadDetails] = await Promise.all([
       Promise.all(project.team.map((id) => Profile.findById(id).select('name email avatar -_id'))),
       Promise.all(project.tasks.slice(0, 5).map((id) => Task.findById(id, 'title priority dueDate -_id'))),
+      Promise.all(project.leads.map((id) => Profile.findById(id).select('name email avatar'))),
     ]);
 
     res.status(200).json({
       ...project.toObject(),
       team: teamDetails.filter(Boolean),
+      leads: leadDetails.filter(Boolean),
       taskCount: project.tasks.length,
       tasks: taskDetails.filter(Boolean),
     });
@@ -95,6 +143,17 @@ exports.addMemberToTeam = async (req, res) => {
     await invite.save();
 
     sendInvitationEvent(userId, invite);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'invited',
+      entityType: 'invitation',
+      entityId: invite._id,
+      entityName: userToInvite.email,
+      projectId,
+      projectName: project.name,
+      description: `${sender?.name || 'Someone'} invited ${userToInvite.email} to "${project.name}"`,
+    });
 
     await sendNotification(userId, 'teamMember', {
       projectId,

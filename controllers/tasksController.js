@@ -3,6 +3,7 @@ const Profile = require('../models/profile');
 const AssignedTask = require('../models/assignTasks');
 const Project = require('../models/projects');
 const { taskService } = require('../services');
+const { promptLLMStructured } = require('../utils/ai');
 const { validate, required, isString, isMongoId } = require('../utils/validate');
 
 exports.createTask = async (req, res) => {
@@ -15,10 +16,30 @@ exports.createTask = async (req, res) => {
     }, req.body);
     if (errors) return res.status(400).json({ errors });
 
-    const task = await taskService.createTask(req.body, req.user.id);
-    res.status(201).json(task);
+    const taskData = { ...req.body };
+    let aiExtracted = null;
+
+    if (req.body.ai === true) {
+      try {
+        const schema = '{"priority": "Low" | "Medium" | "High", "dueDate": string (ISO date) | null, "estimateHours": number | null}';
+        const parsed = await promptLLMStructured(
+          `Task title: ${taskData.title}\nDescription: ${taskData.description || ''}\nInfer priority, due date and estimated hours.`,
+          schema,
+          { systemPrompt: 'Extract task metadata as JSON. Use reasonable defaults.' }
+        );
+        aiExtracted = parsed;
+        if (parsed.priority) taskData.priority = parsed.priority;
+        if (parsed.dueDate) taskData.dueDate = new Date(parsed.dueDate);
+        if (parsed.estimateHours) taskData.estimateHours = Number(parsed.estimateHours);
+      } catch {
+        aiExtracted = null;
+      }
+    }
+
+    const task = await taskService.createTask(taskData, req.user.id);
+    res.status(201).json({ task, aiExtracted });
   } catch (err) {
-    console.error('❌ createTask:', err.message, err.stack);
+    console.error('❌ createTask:', err.message);
     res.status(500).json({ error: 'Failed to create task' });
   }
 };

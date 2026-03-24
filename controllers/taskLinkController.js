@@ -3,7 +3,9 @@
 // DELETE /task-links/:linkId → remove link
 
 const TaskLink = require('../models/taskLink');
+const Task = require('../models/tasks');
 const { validate, required, isMongoId, isEnum } = require('../utils/validate');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.createLink = async (req, res) => {
   try {
@@ -25,6 +27,23 @@ exports.createLink = async (req, res) => {
 
     const link = new TaskLink(req.body);
     await link.save();
+
+    const [source, target] = await Promise.all([
+      Task.findById(req.body.sourceTaskId).select('title projectId'),
+      Task.findById(req.body.targetTaskId).select('title projectId'),
+    ]);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'created',
+      entityType: 'taskLink',
+      entityId: link._id,
+      entityName: `${source?.title || req.body.sourceTaskId} → ${target?.title || req.body.targetTaskId} (${req.body.linkType})`,
+      projectId: req.body.projectId || source?.projectId,
+      changes: [{ field: 'linkType', oldValue: null, newValue: req.body.linkType }],
+      description: `Linked tasks "${source?.title || ''}" and "${target?.title || ''}" (${req.body.linkType})`,
+    });
+
     res.status(201).json(link);
   } catch (err) {
     res.status(500).json({ error: 'Failed to create link' });
@@ -46,6 +65,23 @@ exports.deleteLink = async (req, res) => {
   try {
     const link = await TaskLink.findByIdAndDelete(req.params.linkId);
     if (!link) return res.status(404).json({ error: 'Link not found' });
+
+    const [source, target] = await Promise.all([
+      Task.findById(link.sourceTaskId).select('title'),
+      Task.findById(link.targetTaskId).select('title'),
+    ]);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'deleted',
+      entityType: 'taskLink',
+      entityId: link._id,
+      entityName: `${source?.title || ''} → ${target?.title || ''} (${link.linkType})`,
+      projectId: link.projectId,
+      changes: [{ field: 'linkType', oldValue: link.linkType, newValue: null }],
+      description: `Removed "${link.linkType}" link between "${source?.title || ''}" and "${target?.title || ''}"`,
+    });
+
     res.json({ message: 'Link deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete link' });

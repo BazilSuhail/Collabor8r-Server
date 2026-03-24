@@ -8,6 +8,8 @@
 
 const TimeEntry = require('../models/timeEntry');
 const Task = require('../models/tasks');
+const { recalculateTaskHours } = require('../services/timeService');
+const { logActivity } = require('../utils/activityLogger');
 const { validate, required, isNumber, isString, isDate, isMongoId } = require('../utils/validate');
 
 exports.logTime = async (req, res) => {
@@ -24,8 +26,18 @@ exports.logTime = async (req, res) => {
     const entry = new TimeEntry({ ...req.body, userId: req.user.id });
     await entry.save();
 
-    task.loggedHours = (task.loggedHours || 0) + Number(req.body.hours);
-    await task.save();
+    await recalculateTaskHours(task._id);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'logged',
+      entityType: 'time',
+      entityId: entry._id,
+      entityName: task.title,
+      projectId: task.projectId,
+      changes: [{ field: 'hours', oldValue: 0, newValue: Number(req.body.hours) }],
+      description: `Logged ${req.body.hours}h on task "${task.title}"`,
+    });
 
     res.status(201).json(entry);
   } catch (err) {
@@ -79,12 +91,37 @@ exports.getSprintTimeReport = async (req, res) => {
 
 exports.updateTimeEntry = async (req, res) => {
   try {
-    const entry = await TimeEntry.findOneAndUpdate(
-      { _id: req.params.entryId, userId: req.user.id },
-      req.body,
-      { new: true }
-    );
+    const entry = await TimeEntry.findById(req.params.entryId);
     if (!entry) return res.status(404).json({ error: 'Time entry not found' });
+    if (String(entry.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Not authorized to edit this entry' });
+
+    const oldHours = entry.hours;
+    const oldDescription = entry.description;
+    const updates = {};
+    if (req.body.hours !== undefined) updates.hours = req.body.hours;
+    if (req.body.description !== undefined) updates.description = req.body.description;
+    if (req.body.date !== undefined) updates.date = req.body.date;
+
+    Object.assign(entry, updates);
+    await entry.save();
+
+    const task = await Task.findById(entry.taskId);
+    await recalculateTaskHours(entry.taskId);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'updated',
+      entityType: 'time',
+      entityId: entry._id,
+      entityName: task?.title || 'Time entry',
+      projectId: task?.projectId,
+      changes: [
+        ...(req.body.hours !== undefined && Number(req.body.hours) !== Number(oldHours) ? [{ field: 'hours', oldValue: oldHours, newValue: req.body.hours }] : []),
+        ...(req.body.description !== undefined && req.body.description !== oldDescription ? [{ field: 'description', oldValue: oldDescription, newValue: req.body.description }] : []),
+      ],
+      description: `Updated time entry on task "${task?.title || ''}"`,
+    });
+
     res.json(entry);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update time entry' });
@@ -93,8 +130,25 @@ exports.updateTimeEntry = async (req, res) => {
 
 exports.deleteTimeEntry = async (req, res) => {
   try {
-    const entry = await TimeEntry.findOneAndDelete({ _id: req.params.entryId, userId: req.user.id });
+    const entry = await TimeEntry.findById(req.params.entryId);
     if (!entry) return res.status(404).json({ error: 'Time entry not found' });
+    if (String(entry.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Not authorized to delete this entry' });
+
+    const task = await Task.findById(entry.taskId);
+    await entry.deleteOne();
+    await recalculateTaskHours(entry.taskId);
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'deleted',
+      entityType: 'time',
+      entityId: entry._id,
+      entityName: task?.title || 'Time entry',
+      projectId: task?.projectId,
+      changes: [{ field: 'hours', oldValue: entry.hours, newValue: 0 }],
+      description: `Deleted time entry (${entry.hours}h) on task "${task?.title || ''}"`,
+    });
+
     res.json({ message: 'Time entry deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete time entry' });

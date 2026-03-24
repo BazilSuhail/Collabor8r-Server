@@ -69,6 +69,11 @@ const taskSchema = new mongoose.Schema({
       ref: 'Label'
     }
   ],
+  acceptanceCriteria: [
+    {
+      type: String,
+    }
+  ],
   attachments: [
     {
       name: String,

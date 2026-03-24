@@ -1,6 +1,7 @@
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
 const JoinProject = require('../models/joinProjects');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.getAllUsersFromProject = async (req, res) => {
   try {
@@ -43,12 +44,23 @@ exports.acceptProjectInvite = async (req, res) => {
 
     let joinProject = await JoinProject.findById(userId);
     if (!joinProject) {
-      joinProject = new JoinProject({ _id: userId, projects: [projectId], asManager: [] });
+      joinProject = new JoinProject({ _id: userId, projects: [projectId], asLead: [] });
       await joinProject.save();
     } else if (!joinProject.projects.includes(projectId)) {
       joinProject.projects.push(projectId);
       await joinProject.save();
     }
+
+    await logActivity({
+      actorId: userId,
+      action: 'accepted',
+      entityType: 'invitation',
+      entityId: projectId,
+      entityName: project.name,
+      projectId,
+      projectName: project.name,
+      description: `User joined project "${project.name}"`,
+    });
 
     res.status(200).json({ message: 'Project invitation accepted successfully.' });
   } catch (err) {

@@ -1,4 +1,4 @@
-// POST /invitations → send invite { email, projectId?, organizationId?, role? }
+// POST /invitations → send invite { email, projectId, role? }
 // GET /invitations/pending → pending invites for current user
 // POST /invitations/:token/accept → accept invite
 // POST /invitations/:token/decline → decline invite
@@ -12,10 +12,11 @@ const { projectService } = require('../services');
 const { sendNotification } = require('../services/notificationService');
 const { sendInvitationEvent } = require('../socket');
 const { validate, required, isString, isEmail } = require('../utils/validate');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.sendInvitation = async (req, res) => {
   try {
-    const errors = validate({ email: [required, isEmail] }, req.body);
+    const errors = validate({ email: [required, isEmail], projectId: [required] }, req.body);
     if (errors) return res.status(400).json({ errors });
 
     const email = req.body.email.toLowerCase().trim();
@@ -25,19 +26,17 @@ exports.sendInvitation = async (req, res) => {
 
     const [sender, project] = await Promise.all([
       Profile.findById(req.user.id).select('name email avatar'),
-      req.body.projectId ? Project.findById(req.body.projectId).select('name description') : null,
+      Project.findById(req.body.projectId).select('name description'),
     ]);
 
     const customMsg = req.body.message ? ` — ${req.body.message}` : '';
-    const desc = project
-      ? `${sender?.name || 'Someone'} has invited you to join "${project.name}"${customMsg}`
-      : `${sender?.name || 'Someone'} has invited you${customMsg}`;
+    const desc = `${sender?.name || 'Someone'} has invited you to join "${project?.name || 'a project'}"${customMsg}`;
 
     const invite = new Invitation({
       ...req.body,
       email,
       invitedBy: req.user.id,
-      type: req.body.projectId ? 'teamMember' : 'organization',
+      type: 'teamMember',
       senderName: sender?.name || 'Someone',
       senderEmail: sender?.email || '',
       senderAvatar: sender?.avatar || '',
@@ -51,6 +50,17 @@ exports.sendInvitation = async (req, res) => {
     if (invitedUser) {
       sendInvitationEvent(invitedUser._id, invite);
     }
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'invited',
+      entityType: 'invitation',
+      entityId: invite._id,
+      entityName: email,
+      projectId: req.body.projectId,
+      projectName: project?.name,
+      description: `${sender?.name || 'Someone'} invited ${email} to "${project?.name || 'a project'}"`,
+    });
 
     res.status(201).json(invite);
   } catch (err) {
@@ -87,15 +97,15 @@ exports.acceptInvitation = async (req, res) => {
       if (profile) {
         await projectService.addTeamMember(invite.projectId, profile._id, req.user.id);
 
-        if (invite.role === 'manager') {
-          await Project.findByIdAndUpdate(invite.projectId, { 'projectManager.status': 'Approved' });
+        if (invite.role === 'lead') {
+          await Project.findByIdAndUpdate(invite.projectId, { $addToSet: { leads: profile._id } });
 
           let joinProject = await JoinProject.findById(profile._id);
           if (!joinProject) {
-            joinProject = new JoinProject({ _id: profile._id, projects: [], asManager: [invite.projectId] });
+            joinProject = new JoinProject({ _id: profile._id, projects: [], asLead: [invite.projectId] });
             await joinProject.save();
-          } else if (!joinProject.asManager.includes(invite.projectId)) {
-            joinProject.asManager.push(invite.projectId);
+          } else if (!joinProject.asLead.includes(invite.projectId)) {
+            joinProject.asLead.push(invite.projectId);
             await joinProject.save();
           }
         }
@@ -105,6 +115,17 @@ exports.acceptInvitation = async (req, res) => {
     invite.status = 'accepted';
     invite.respondedAt = new Date();
     await invite.save();
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'accepted',
+      entityType: 'invitation',
+      entityId: invite._id,
+      entityName: invite.email,
+      projectId: invite.projectId,
+      projectName: invite.projectName,
+      description: `Invitation accepted by ${invite.email} for "${invite.projectName}"`,
+    });
 
     if (invite.invitedBy) {
       sendNotification(invite.invitedBy, 'invitationResponse', {
@@ -131,6 +152,17 @@ exports.declineInvitation = async (req, res) => {
     invite.status = 'declined';
     invite.respondedAt = new Date();
     await invite.save();
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'declined',
+      entityType: 'invitation',
+      entityId: invite._id,
+      entityName: invite.email,
+      projectId: invite.projectId,
+      projectName: invite.projectName,
+      description: `Invitation declined by ${invite.email} for "${invite.projectName}"`,
+    });
 
     if (invite.invitedBy) {
       sendNotification(invite.invitedBy, 'invitationResponse', {

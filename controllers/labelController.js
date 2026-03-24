@@ -6,6 +6,7 @@
 const Label = require('../models/label');
 const Task = require('../models/tasks');
 const { validate, required, isString } = require('../utils/validate');
+const { logActivity } = require('../utils/activityLogger');
 
 exports.getProjectLabels = async (req, res) => {
   try {
@@ -23,6 +24,17 @@ exports.createLabel = async (req, res) => {
 
     const label = new Label(req.body);
     await label.save();
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'created',
+      entityType: 'label',
+      entityId: label._id,
+      entityName: label.name,
+      projectId: label.projectId,
+      description: `Label "${label.name}" created`,
+    });
+
     res.status(201).json(label);
   } catch (err) {
     res.status(500).json({ error: 'Failed to create label' });
@@ -33,6 +45,17 @@ exports.updateLabel = async (req, res) => {
   try {
     const label = await Label.findByIdAndUpdate(req.params.labelId, req.body, { new: true });
     if (!label) return res.status(404).json({ error: 'Label not found' });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'updated',
+      entityType: 'label',
+      entityId: label._id,
+      entityName: label.name,
+      projectId: label.projectId,
+      description: `Label "${label.name}" updated`,
+    });
+
     res.json(label);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update label' });
@@ -44,6 +67,17 @@ exports.deleteLabel = async (req, res) => {
     const label = await Label.findByIdAndDelete(req.params.labelId);
     if (!label) return res.status(404).json({ error: 'Label not found' });
     await Task.updateMany({ labels: req.params.labelId }, { $pull: { labels: req.params.labelId } });
+
+    await logActivity({
+      actorId: req.user.id,
+      action: 'deleted',
+      entityType: 'label',
+      entityId: req.params.labelId,
+      entityName: label.name,
+      projectId: label.projectId,
+      description: `Label "${label.name}" deleted`,
+    });
+
     res.json({ message: 'Label deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete label' });

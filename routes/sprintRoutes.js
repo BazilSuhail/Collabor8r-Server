@@ -12,5 +12,6 @@ router.post('/sprint/:sprintId/activate', authMiddleware, ctrl.activateSprint);
 router.post('/sprint/:sprintId/complete', authMiddleware, ctrl.completeSprint);
 router.post('/sprint/:sprintId/add-tasks', authMiddleware, ctrl.addTasksToSprint);
 router.post('/sprint/:sprintId/remove-tasks', authMiddleware, ctrl.removeTasksFromSprint);
+router.get('/sprint/:sprintId/retrospective', authMiddleware, ctrl.sprintRetrospective);
 
 module.exports = router;

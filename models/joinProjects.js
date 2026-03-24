@@ -5,7 +5,7 @@ const joinProjectSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, // Same ID as the user's Profile document
     required: true,
   },
-  asManager: [
+  asLead: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Project',

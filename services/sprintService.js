@@ -45,10 +45,22 @@ async function addTasksToSprint(sprintId, taskIds, userId) {
   }
 
   await sprint.save();
+
+  await logActivity({
+    actorId: userId,
+    action: 'updated',
+    entityType: 'sprint',
+    entityId: sprintId,
+    entityName: sprint.name,
+    projectId: sprint.projectId,
+    changes: [{ field: 'tasks', oldValue: null, newValue: taskIds }],
+    description: `Added ${taskIds.length} task(s) to sprint "${sprint.name}"`,
+  });
+
   return sprint;
 }
 
-async function removeTasksFromSprint(sprintId, taskIds) {
+async function removeTasksFromSprint(sprintId, taskIds, userId) {
   const sprint = await Sprint.findById(sprintId);
   if (!sprint) throw new Error('Sprint not found');
 
@@ -59,6 +71,17 @@ async function removeTasksFromSprint(sprintId, taskIds) {
     { _id: { $in: taskIds }, sprintId },
     { $unset: { sprintId: '' } },
   );
+
+  await logActivity({
+    actorId: userId,
+    action: 'updated',
+    entityType: 'sprint',
+    entityId: sprintId,
+    entityName: sprint.name,
+    projectId: sprint.projectId,
+    changes: [{ field: 'tasks', oldValue: taskIds, newValue: null }],
+    description: `Removed ${taskIds.length} task(s) from sprint "${sprint.name}"`,
+  });
 
   return sprint;
 }
@@ -73,11 +96,12 @@ async function completeSprint(sprintId, userId) {
 
   await logActivity({
     actorId: userId,
-    action: 'updated',
+    action: 'completed',
     entityType: 'sprint',
     entityId: sprintId,
     entityName: sprint.name,
     projectId: sprint.projectId,
+    changes: [{ field: 'isCompleted', oldValue: false, newValue: true }],
     description: `Sprint "${sprint.name}" completed`,
   });
 

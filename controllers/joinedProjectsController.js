@@ -1,15 +1,17 @@
 const Project = require('../models/projects');
 const Profile = require('../models/profile');
-const JoinProject = require('../models/joinProjects');
 
 const formatProject = async (projectId) => {
   const project = await Project.findById(projectId)
-    .select('name description createdBy projectManager theme tasks team')
+    .select('name description createdBy leads theme tasks team')
     .lean();
   if (!project) return null;
   const admin = project.createdBy ? await Profile.findById(project.createdBy).select('name avatar').lean() : null;
+  const leads = project.leads?.length
+    ? await Profile.find({ _id: { $in: project.leads } }).select('name email avatar').lean()
+    : [];
   return {
-    _id: project._id, name: project.name, projectManager: project.projectManager,
+    _id: project._id, name: project.name, leads,
     theme: project.theme, description: project.description,
     createdBy: admin ? { name: admin.name, avatar: admin.avatar } : null,
     taskCount: project.tasks?.length || 0,
@@ -19,25 +21,21 @@ const formatProject = async (projectId) => {
 
 exports.getJoinedProjects = async (req, res) => {
   try {
-    const doc = await JoinProject.findById(req.user.id).select('projects');
-    if (!doc) return res.status(404).json({ error: 'No joined projects found.' });
-
-    const projects = await Promise.all(doc.projects.map(formatProject));
-    res.status(200).json(projects.filter(Boolean));
+    const projects = await Project.find({ team: req.user.id, leads: { $ne: req.user.id } }).select('_id').lean();
+    const result = await Promise.all(projects.map((p) => formatProject(p._id)));
+    res.status(200).json(result.filter(Boolean));
   } catch (err) {
     res.status(500).json({ error: 'Server error while fetching joined projects' });
   }
 };
 
-exports.getJoinedProjectsAsManager = async (req, res) => {
+exports.getJoinedProjectsAsLead = async (req, res) => {
   try {
-    const doc = await JoinProject.findById(req.user.id).select('asManager');
-    if (!doc) return res.status(404).json({ error: 'No managed projects found.' });
-
-    const projects = await Promise.all(doc.asManager.map(formatProject));
-    res.status(200).json(projects.filter(Boolean));
+    const projects = await Project.find({ leads: req.user.id }).select('_id').lean();
+    const result = await Promise.all(projects.map((p) => formatProject(p._id)));
+    res.status(200).json(result.filter(Boolean));
   } catch (err) {
-    res.status(500).json({ error: 'Server error while fetching managed projects' });
+    res.status(500).json({ error: 'Server error while fetching led projects' });
   }
 };
 

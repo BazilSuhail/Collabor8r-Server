@@ -3,20 +3,23 @@ const Project = require('../models/projects');
 const AssignedTask = require('../models/assignTasks');
 const Profile = require('../models/profile');
 const { logActivity } = require('../utils/activityLogger');
-const { dispatchWebhook } = require('../utils/webhookDispatcher');
 
 async function createTask(data, userId) {
-  const { title, description, status, priority, dueDate, assignedTo, projectId, sprintId, parentId, estimateHours, labels } = data;
+  const { title, description, status, priority, dueDate, assignedTo, projectId, sprintId, parentId, estimateHours, labels, acceptanceCriteria } = data;
 
   const taskData = {
     title, description, status, priority,
     progress: 0,
     dueDate, projectId, labels,
   };
+  if (acceptanceCriteria) taskData.acceptanceCriteria = acceptanceCriteria;
   if (assignedTo) taskData.assignedTo = assignedTo;
   if (sprintId) taskData.sprintId = sprintId;
   if (parentId) taskData.parentId = parentId;
-  if (estimateHours) taskData.estimateHours = Number(estimateHours);
+  if (estimateHours) {
+    taskData.estimateHours = Number(estimateHours);
+    taskData.remainingHours = Number(estimateHours);
+  }
 
   const newTask = new Task(taskData);
 
@@ -52,8 +55,6 @@ async function createTask(data, userId) {
     description: `Task "${title}" created`,
   });
 
-  await dispatchWebhook('task.created', { task: savedTask });
-
   return savedTask;
 }
 
@@ -73,6 +74,10 @@ async function updateTask(taskId, data, userId) {
   }
 
   if (changes.length === 0) return task;
+
+  if (data.estimateHours !== undefined) {
+    task.remainingHours = Math.max(0, (Number(data.estimateHours) || 0) - (task.loggedHours || 0));
+  }
 
   await task.save();
 
@@ -106,8 +111,6 @@ async function updateTask(taskId, data, userId) {
     description: `Task "${task.title}" updated`,
   });
 
-  await dispatchWebhook('task.updated', { task, changes });
-
   return task;
 }
 
@@ -129,7 +132,6 @@ async function deleteTask(taskId, userId) {
     description: `Task "${task.title}" deleted`,
   });
 
-  await dispatchWebhook('task.deleted', { taskId });
 }
 
 module.exports = { createTask, updateTask, deleteTask };

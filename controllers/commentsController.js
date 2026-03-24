@@ -1,6 +1,7 @@
 const Task = require('../models/tasks');
 const Comment = require('../models/comments');
 const Profile = require('../models/profile');
+const { promptLLM } = require('../utils/ai');
 const { logActivity } = require('../utils/activityLogger');
 const { validate, required, isString } = require('../utils/validate');
 
@@ -21,6 +22,31 @@ exports.getCommentsForTask = async (req, res) => {
   }
 };
 
+exports.summarizeComments = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const task = await Task.findById(taskId).lean();
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const comments = await Comment.find({ _id: { $in: task.comments } })
+      .populate('userId', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!comments.length) return res.status(200).json({ summary: 'No comments to summarize.', commentCount: 0 });
+
+    const text = comments.map((c) => `${c.userId?.name || 'Unknown'}: ${c.content}`).join('\n');
+    const summary = await promptLLM(
+      `Summarize this discussion thread in 2-3 bullet points:\n${text}`,
+      { temperature: 0.3, maxTokens: 250 }
+    );
+
+    res.status(200).json({ summary, commentCount: comments.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to summarize comments' });
+  }
+};
+
 exports.addCommentToTask = async (req, res) => {
   try {
     const errors = validate({ content: [required, isString] }, req.body);
@@ -33,7 +59,9 @@ exports.addCommentToTask = async (req, res) => {
     await comment.save();
     await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id.toString() } });
 
-    await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, entityName: content?.slice(0, 50), projectId: (await Task.findById(taskId).select('projectId').lean())?.projectId });
+    const task = await Task.findById(taskId).select('projectId title').lean();
+
+    await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, entityName: content?.slice(0, 50), projectId: task?.projectId, description: `Comment added on task "${task?.title || ''}"` });
 
     res.status(201).json({ message: 'Comment added successfully.', comment });
   } catch (err) {

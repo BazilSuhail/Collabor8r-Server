@@ -19,6 +19,15 @@ const commentSchema = new mongoose.Schema({
     ref: 'Task', 
     required: true,
   },
-});
+  attachments: [
+    {
+      name: String,
+      path: String,
+      size: Number,
+      mimetype: String,
+      uploadedAt: { type: Date, default: Date.now }
+    }
+  ],
+}, { timestamps: true });
 
 module.exports = mongoose.model('Comment', commentSchema);
