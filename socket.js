@@ -1,8 +1,13 @@
 const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
+const { createAdapter } = require("@socket.io/redis-adapter");
+const { pubClient, subClient } = require("./config/redis");
 
 let io;
 const connectedUsers = new Map();
-const projectRooms = new Map();
+
+const PRESENCE_PREFIX = "presence";
+const ROOM_PREFIX = "room:project";
 
 const initSocket = (server) => {
   io = new Server(server, {
@@ -12,37 +17,79 @@ const initSocket = (server) => {
     },
   });
 
+  if (pubClient && subClient) {
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("⚡ Socket.IO Redis adapter attached");
+  } else {
+    console.log("⚡ Socket.IO running in-memory (no Redis)");
+  }
+
   console.log("⚡ Socket.IO initialized and ready for connections");
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     const { userId } = socket.handshake.auth;
+    const token = socket.handshake.auth.token;
 
-    if (userId) {
-      if (connectedUsers.has(userId)) {
-        console.log(`🔄 ${userId} reconnected — replacing old socket`);
+    let verifiedUserId = userId;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        verifiedUserId = decoded.id || decoded.userId || decoded._id || userId;
+      } catch (err) {
+        console.warn(`⚠️  Socket auth failed: ${err.message}`);
+        socket.disconnect(true);
+        return;
       }
-      connectedUsers.set(userId, socket.id);
-      socket.userId = userId;
-      console.log(`✅ User ONLINE  → ${userId}  |  Socket: ${socket.id}  |  Total online: ${connectedUsers.size}`);
+    }
+
+    if (verifiedUserId) {
+      if (connectedUsers.has(verifiedUserId)) {
+        console.log(`🔄 ${verifiedUserId} reconnected — replacing old socket`);
+      }
+      connectedUsers.set(verifiedUserId, socket.id);
+      socket.userId = verifiedUserId;
+
+      if (pubClient) {
+        await pubClient.sadd(`${PRESENCE_PREFIX}:${verifiedUserId}`, socket.id);
+        await pubClient.set(`${PRESENCE_PREFIX}:${verifiedUserId}:ts`, Date.now(), "EX", 300);
+      }
+
+      console.log(`✅ User ONLINE  → ${verifiedUserId}  |  Socket: ${socket.id}  |  Total online: ${connectedUsers.size}`);
       io.emit("online-count", { count: connectedUsers.size });
     }
 
-    socket.on("join-project", (projectId) => {
+    socket.on("join-project", async (projectId) => {
       socket.join(`project:${projectId}`);
-      if (!projectRooms.has(projectId)) projectRooms.set(projectId, new Set());
-      projectRooms.get(projectId).add(socket.id);
-      console.log(`📌 ${userId || 'anon'} joined project room: ${projectId}`);
-    });
-
-    socket.on("leave-project", (projectId) => {
-      socket.leave(`project:${projectId}`);
-      if (projectRooms.has(projectId)) {
-        projectRooms.get(projectId).delete(socket.id);
+      if (verifiedUserId && pubClient) {
+        await pubClient.sadd(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
       }
-      console.log(`🚪 ${userId || 'anon'} left project room: ${projectId}`);
+      console.log(`📌 ${verifiedUserId || "anon"} joined project room: ${projectId}`);
+
+      if (verifiedUserId) {
+        io.to(`project:${projectId}`).emit("member:online", {
+          userId: verifiedUserId,
+          socketId: socket.id,
+        });
+      }
     });
 
-    socket.on("disconnect", (reason) => {
+    socket.on("leave-project", async (projectId) => {
+      socket.leave(`project:${projectId}`);
+      if (verifiedUserId && pubClient) {
+        await pubClient.srem(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
+      }
+      console.log(`🚪 ${verifiedUserId || "anon"} left project room: ${projectId}`);
+
+      if (verifiedUserId) {
+        io.to(`project:${projectId}`).emit("member:offline", {
+          userId: verifiedUserId,
+          socketId: socket.id,
+        });
+      }
+    });
+
+    socket.on("disconnect", async (reason) => {
       const wasUserId = socket.userId;
       for (const [key, value] of connectedUsers.entries()) {
         if (value === socket.id) {
@@ -50,9 +97,16 @@ const initSocket = (server) => {
           break;
         }
       }
-      for (const [, members] of projectRooms) {
-        members.delete(socket.id);
+
+      if (wasUserId && pubClient) {
+        await pubClient.srem(`${PRESENCE_PREFIX}:${wasUserId}`, socket.id);
+        const remaining = await pubClient.scard(`${PRESENCE_PREFIX}:${wasUserId}`);
+        if (remaining === 0) {
+          await pubClient.del(`${PRESENCE_PREFIX}:${wasUserId}`);
+          await pubClient.del(`${PRESENCE_PREFIX}:${wasUserId}:ts`);
+        }
       }
+
       if (wasUserId) {
         console.log(`❌ User OFFLINE → ${wasUserId}  |  Reason: ${reason}  |  Total online: ${connectedUsers.size}`);
         io.emit("online-count", { count: connectedUsers.size });
@@ -92,4 +146,21 @@ const sendInvitationEvent = (userId, invitation) => {
   }
 };
 
-module.exports = { initSocket, getIo, getOnlineUsers, isUserOnline, sendMessageToUser, sendToProjectRoom, sendInvitationEvent };
+const getOnlineProjectMembers = async (projectId) => {
+  if (!pubClient) {
+    return Array.from(connectedUsers.keys());
+  }
+  const members = await pubClient.smembers(`${ROOM_PREFIX}:${projectId}`);
+  return members;
+};
+
+module.exports = {
+  initSocket,
+  getIo,
+  getOnlineUsers,
+  isUserOnline,
+  sendMessageToUser,
+  sendToProjectRoom,
+  sendInvitationEvent,
+  getOnlineProjectMembers,
+};
