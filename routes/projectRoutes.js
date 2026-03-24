@@ -9,5 +9,6 @@ router.put('/lead-response/:projectId', authenticateUser, projectController.lead
 router.get('/:projectId/summary', authenticateUser, projectController.projectSummary);
 
 router.put('/:projectId/update', authenticateUser, projectController.updateProject);
+router.get('/:projectId/online-members', authenticateUser, projectController.getOnlineMembers);
 
 module.exports = router;

@@ -4,7 +4,7 @@ const JoinProject = require('../models/joinProjects');
 const Invitation = require('../models/invitation');
 const { projectService } = require('../services');
 const { sendNotification } = require('../services/notificationService');
-const { sendInvitationEvent } = require('../socket');
+const { sendInvitationEvent, sendToProjectRoom, getOnlineProjectMembers } = require('../socket');
 const { promptLLM, promptLLMStructured } = require('../utils/ai');
 const { validate, required, isString, isEmail } = require('../utils/validate');
 const { logActivity } = require('../utils/activityLogger');
@@ -122,6 +122,13 @@ exports.updateProject = async (req, res) => {
       description: `Project "${project.name}" updated`,
     });
 
+    sendToProjectRoom(String(projectId), 'project:updated', {
+      project: updated,
+      changes,
+      actor: { userId: req.user.id },
+      timestamp: Date.now(),
+    });
+
     if (leadEmail) {
       const user = await Profile.findOne({ email: leadEmail }).select('_id email');
       if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -216,5 +223,15 @@ exports.leadResponse = async (req, res) => {
     res.status(200).json(fresh);
   } catch (err) {
     res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+exports.getOnlineMembers = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const memberIds = await getOnlineProjectMembers(projectId);
+    res.status(200).json({ onlineMembers: memberIds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch online members' });
   }
 };
