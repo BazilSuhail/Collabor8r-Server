@@ -1,6 +1,7 @@
 const Sprint = require('../models/sprints');
 const Task = require('../models/tasks');
 const { logActivity } = require('../utils/activityLogger');
+const { sendToProjectRoom } = require('../socket');
 
 async function createSprint(data, userId) {
   const activeSprint = await Sprint.findOne({ projectId: data.projectId, isActive: true });
@@ -30,6 +31,12 @@ async function createSprint(data, userId) {
     description: `Sprint "${sprint.name}" created`,
   });
 
+  sendToProjectRoom(String(data.projectId), 'sprint:created', {
+    sprint,
+    actor: { userId },
+    timestamp: Date.now(),
+  });
+
   return sprint;
 }
 
@@ -55,6 +62,14 @@ async function addTasksToSprint(sprintId, taskIds, userId) {
     projectId: sprint.projectId,
     changes: [{ field: 'tasks', oldValue: null, newValue: taskIds }],
     description: `Added ${taskIds.length} task(s) to sprint "${sprint.name}"`,
+  });
+
+  sendToProjectRoom(String(sprint.projectId), 'sprint:tasks-updated', {
+    sprint,
+    taskIds,
+    action: 'added',
+    actor: { userId },
+    timestamp: Date.now(),
   });
 
   return sprint;
@@ -83,6 +98,14 @@ async function removeTasksFromSprint(sprintId, taskIds, userId) {
     description: `Removed ${taskIds.length} task(s) from sprint "${sprint.name}"`,
   });
 
+  sendToProjectRoom(String(sprint.projectId), 'sprint:tasks-updated', {
+    sprint,
+    taskIds,
+    action: 'removed',
+    actor: { userId },
+    timestamp: Date.now(),
+  });
+
   return sprint;
 }
 
@@ -103,6 +126,12 @@ async function completeSprint(sprintId, userId) {
     projectId: sprint.projectId,
     changes: [{ field: 'isCompleted', oldValue: false, newValue: true }],
     description: `Sprint "${sprint.name}" completed`,
+  });
+
+  sendToProjectRoom(String(sprint.projectId), 'sprint:completed', {
+    sprint,
+    actor: { userId },
+    timestamp: Date.now(),
   });
 
   return sprint;

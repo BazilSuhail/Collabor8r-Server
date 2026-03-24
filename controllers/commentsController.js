@@ -3,6 +3,7 @@ const Comment = require('../models/comments');
 const Profile = require('../models/profile');
 const { promptLLM } = require('../utils/ai');
 const { logActivity } = require('../utils/activityLogger');
+const { sendToProjectRoom } = require('../socket');
 const { validate, required, isString } = require('../utils/validate');
 
 exports.getCommentsForTask = async (req, res) => {
@@ -63,6 +64,16 @@ exports.addCommentToTask = async (req, res) => {
 
     await logActivity({ actorId: req.user.id, action: 'comment_added', entityType: 'comment', entityId: comment._id, entityName: content?.slice(0, 50), projectId: task?.projectId, description: `Comment added on task "${task?.title || ''}"` });
 
+    if (task?.projectId) {
+      sendToProjectRoom(String(task.projectId), 'comment:created', {
+        comment,
+        taskId,
+        taskTitle: task.title,
+        actor: { userId: req.user.id },
+        timestamp: Date.now(),
+      });
+    }
+
     res.status(201).json({ message: 'Comment added successfully.', comment });
   } catch (err) {
     res.status(500).json({ error: 'Failed to add comment.' });
@@ -79,6 +90,17 @@ exports.editComment = async (req, res) => {
 
     await logActivity({ actorId: req.user.id, action: 'comment_edited', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
 
+    const task = await Task.findById(comment.taskId).select('projectId title').lean();
+    if (task?.projectId) {
+      sendToProjectRoom(String(task.projectId), 'comment:edited', {
+        comment,
+        taskId: comment.taskId,
+        taskTitle: task.title,
+        actor: { userId: req.user.id },
+        timestamp: Date.now(),
+      });
+    }
+
     res.status(200).json({ message: 'Comment updated successfully.', comment });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update comment.' });
@@ -92,6 +114,17 @@ exports.deleteComment = async (req, res) => {
 
     await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id.toString() } });
     await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
+
+    const task = await Task.findById(comment.taskId).select('projectId title').lean();
+    if (task?.projectId) {
+      sendToProjectRoom(String(task.projectId), 'comment:deleted', {
+        commentId: comment._id,
+        taskId: comment.taskId,
+        taskTitle: task.title,
+        actor: { userId: req.user.id },
+        timestamp: Date.now(),
+      });
+    }
 
     res.status(200).json({ message: 'Comment deleted successfully.' });
   } catch (err) {

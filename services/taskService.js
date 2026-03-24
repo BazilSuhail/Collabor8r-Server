@@ -3,6 +3,7 @@ const Project = require('../models/projects');
 const AssignedTask = require('../models/assignTasks');
 const Profile = require('../models/profile');
 const { logActivity } = require('../utils/activityLogger');
+const { sendToProjectRoom } = require('../socket');
 
 async function createTask(data, userId) {
   const { title, description, status, priority, dueDate, assignedTo, projectId, sprintId, parentId, estimateHours, labels, acceptanceCriteria } = data;
@@ -53,6 +54,12 @@ async function createTask(data, userId) {
     entityName: title,
     projectId,
     description: `Task "${title}" created`,
+  });
+
+  sendToProjectRoom(projectId, 'task:created', {
+    task: savedTask,
+    actor: { userId },
+    timestamp: Date.now(),
   });
 
   return savedTask;
@@ -111,6 +118,13 @@ async function updateTask(taskId, data, userId) {
     description: `Task "${task.title}" updated`,
   });
 
+  sendToProjectRoom(String(task.projectId), 'task:updated', {
+    task,
+    changes,
+    actor: { userId },
+    timestamp: Date.now(),
+  });
+
   return task;
 }
 
@@ -130,6 +144,12 @@ async function deleteTask(taskId, userId) {
     entityName: task.title,
     projectId: task.projectId,
     description: `Task "${task.title}" deleted`,
+  });
+
+  sendToProjectRoom(String(task.projectId), 'task:deleted', {
+    taskId,
+    actor: { userId },
+    timestamp: Date.now(),
   });
 
 }

@@ -6,7 +6,7 @@ const Invitation = require('../models/invitation');
 const Notification = require('../models/notifications');
 const { logActivity } = require('../utils/activityLogger');
 const { sendNotification } = require('./notificationService');
-const { sendInvitationEvent } = require('../socket');
+const { sendInvitationEvent, sendToProjectRoom } = require('../socket');
 
 async function createProject(data, userId) {
   const {
@@ -123,6 +123,14 @@ async function addTeamMember(projectId, memberId, userId) {
     projectId,
     projectName: project.name,
     description: `Member added to project "${project.name}"`,
+  });
+
+  sendToProjectRoom(String(projectId), 'member:added', {
+    projectId,
+    memberId,
+    projectName: project.name,
+    actor: { userId },
+    timestamp: Date.now(),
   });
 
   return project;

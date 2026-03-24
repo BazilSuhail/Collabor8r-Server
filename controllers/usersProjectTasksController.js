@@ -3,6 +3,7 @@ const AssignedTask = require('../models/assignTasks');
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
 const { logActivity } = require('../utils/activityLogger');
+const { sendToProjectRoom } = require('../socket');
 
 const ALLOWED_FIELDS = [
   'title', 'description', 'status', 'priority', 'progress', 'dueDate',
@@ -69,6 +70,15 @@ exports.updateTaskStatus = async (req, res) => {
         });
       }
 
+      sendToProjectRoom(String(task.projectId), 'task:status-changed', {
+        task,
+        oldStatus,
+        newStatus: status,
+        changes,
+        actor: { userId: req.user.id },
+        timestamp: Date.now(),
+      });
+
       return task;
     }));
 
@@ -111,6 +121,13 @@ exports.updateTaskStatusAndProgress = async (req, res) => {
       projectId: task.projectId,
       changes,
       description: `Task "${task.title}" updated`,
+    });
+
+    sendToProjectRoom(String(task.projectId), 'task:updated', {
+      task,
+      changes,
+      actor: { userId: req.user.id },
+      timestamp: Date.now(),
     });
 
     res.status(200).json({ success: true, message: 'Task updated', updatedTask: task });

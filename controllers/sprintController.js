@@ -13,6 +13,7 @@ const { createSprint, addTasksToSprint, removeTasksFromSprint, completeSprint } 
 const { promptLLMStructured } = require('../utils/ai');
 const { validate, required, isString, isDate, isArray, isMongoId } = require('../utils/validate');
 const { logActivity } = require('../utils/activityLogger');
+const { sendToProjectRoom } = require('../socket');
 
 exports.getSprints = async (req, res) => {
   try {
@@ -74,6 +75,13 @@ exports.updateSprint = async (req, res) => {
       description: `Sprint "${sprint.name}" updated`,
     });
 
+    sendToProjectRoom(String(sprint.projectId), 'sprint:updated', {
+      sprint,
+      changes,
+      actor: { userId: req.user.id },
+      timestamp: Date.now(),
+    });
+
     res.json(sprint);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update sprint' });
@@ -94,6 +102,12 @@ exports.deleteSprint = async (req, res) => {
       entityName: sprint.name,
       projectId: sprint.projectId,
       description: `Sprint "${sprint.name}" deleted`,
+    });
+
+    sendToProjectRoom(String(sprint.projectId), 'sprint:deleted', {
+      sprintId: sprint._id,
+      actor: { userId: req.user.id },
+      timestamp: Date.now(),
     });
 
     res.json({ message: 'Sprint deleted' });
@@ -123,6 +137,12 @@ exports.activateSprint = async (req, res) => {
       projectId: sprint.projectId,
       changes: [{ field: 'isActive', oldValue: false, newValue: true }],
       description: `Sprint "${sprint.name}" activated`,
+    });
+
+    sendToProjectRoom(String(sprint.projectId), 'sprint:activated', {
+      sprint,
+      actor: { userId: req.user.id },
+      timestamp: Date.now(),
     });
 
     res.json(sprint);
