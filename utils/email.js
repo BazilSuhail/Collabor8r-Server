@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
 
+let emailQueue = null;
+try {
+  emailQueue = require('../queues/emailQueue').emailQueue;
+} catch (_) {}
+
 let transporter = null;
 
 function getTransporter() {
@@ -23,6 +28,15 @@ function getTransporter() {
 }
 
 async function sendEmail({ to, subject, html }) {
+  if (emailQueue) {
+    await emailQueue.add('send', { to, subject, html }, {
+      removeOnComplete: true,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+    });
+    return { queued: true };
+  }
+
   const transport = getTransporter();
   const from = process.env.EMAIL_FROM || 'noreply@collabor8r.app';
 

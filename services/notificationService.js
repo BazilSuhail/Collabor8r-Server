@@ -1,7 +1,21 @@
 const Notification = require('../models/notifications');
 const { sendMessageToUser } = require('../socket');
 
+let notificationQueue = null;
+try {
+  notificationQueue = require('../queues/notificationQueue').notificationQueue;
+} catch (_) {}
+
 async function sendNotification(userId, type, data) {
+  if (notificationQueue) {
+    await notificationQueue.add('send', { userId, type, data }, {
+      removeOnComplete: true,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 1000 },
+    });
+    return { queued: true };
+  }
+
   const notificationDoc = await Notification.findById(userId);
   if (!notificationDoc) return null;
 

@@ -8,6 +8,16 @@ const { initSocket } = require('./socket');
 
 dotenv.config();
 connectDB();
+
+if (process.env.REDIS_URL) {
+  require('./queues/notificationQueue');
+  require('./queues/emailQueue');
+  require('./queues/activityQueue');
+  console.log('⚡ BullMQ workers started');
+} else {
+  console.log('⚡ BullMQ workers skipped (no REDIS_URL)');
+}
+
 const app = express();
 
 const server = http.createServer(app);

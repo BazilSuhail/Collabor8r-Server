@@ -2,8 +2,24 @@ const ActivityLog = require('../models/activityLog');
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
 
+let activityQueue = null;
+try {
+  activityQueue = require('../queues/activityQueue').activityQueue;
+} catch (_) {}
+
 async function logActivity({ actorId, actorName, actorAvatar, action, entityType, entityId, entityName, projectId, projectName, changes, description }) {
   try {
+    if (activityQueue) {
+      await activityQueue.add('log', {
+        actorId, actorName, actorAvatar, action, entityType, entityId, entityName, projectId, projectName, changes, description,
+      }, {
+        removeOnComplete: true,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      });
+      return { queued: true };
+    }
+
     const entryData = { actorId, action, entityType, entityId, changes, description };
 
     if (actorName) {
