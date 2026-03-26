@@ -17,6 +17,13 @@ const notificationWorker = new Worker(
 
     const entry = { type, data: { ...data, createdAt: Date.now() }, read: false };
     notificationDoc.notifications.push(entry);
+
+    // Prune notifications older than 30 days
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    notificationDoc.notifications = notificationDoc.notifications.filter(
+      (n) => !n.data || !n.data.createdAt || n.data.createdAt >= thirtyDaysAgo
+    );
+
     await notificationDoc.save();
 
     sendMessageToUser(userId, entry);

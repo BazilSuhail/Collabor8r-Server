@@ -46,11 +46,22 @@ exports.getProjectDetails = async (req, res) => {
 
     if (!project.team?.length) return res.status(200).json({ project, teamDetails: 'No team members found.' });
 
-    const profiles = await Profile.find({ _id: { $in: project.team } }).select('name email avatar').lean();
+    const [profiles, onlineMemberIds] = await Promise.all([
+      Profile.find({ _id: { $in: project.team } }).select('name email avatar').lean(),
+      require('../socket').getOnlineProjectMembers(req.params.projectId)
+    ]);
+    const onlineSet = new Set(onlineMemberIds.map(id => id.toString()));
+
     const profileMap = Object.fromEntries(profiles.map((p) => [p._id.toString(), p]));
     const populatedTeam = project.team.map((id) => {
       const p = profileMap[id.toString()];
-      return { _id: id, name: p?.name || 'Name not found', email: p?.email || 'Email not found', avatar: p?.avatar || 'Avatar not found' };
+      return { 
+        _id: id, 
+        name: p?.name || 'Name not found', 
+        email: p?.email || 'Email not found', 
+        avatar: p?.avatar || 'Avatar not found',
+        isOnline: onlineSet.has(id.toString())
+      };
     });
 
     res.status(200).json({ project: { ...project, team: populatedTeam } });

@@ -21,6 +21,13 @@ async function sendNotification(userId, type, data) {
 
   const entry = { type, data: { ...data, createdAt: Date.now() }, read: false };
   notificationDoc.notifications.push(entry);
+
+  // Prune notifications older than 30 days
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  notificationDoc.notifications = notificationDoc.notifications.filter(
+    (n) => !n.data || !n.data.createdAt || n.data.createdAt >= thirtyDaysAgo
+  );
+
   await notificationDoc.save();
 
   sendMessageToUser(userId, entry);
@@ -45,6 +52,18 @@ async function markAsRead(userId, notificationIndex) {
 async function getNotifications(userId) {
   const notificationDoc = await Notification.findById(userId);
   if (!notificationDoc) return [];
+
+  // Prune notifications older than 30 days
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const initialLength = notificationDoc.notifications.length;
+  notificationDoc.notifications = notificationDoc.notifications.filter(
+    (n) => !n.data || !n.data.createdAt || n.data.createdAt >= thirtyDaysAgo
+  );
+
+  if (notificationDoc.notifications.length !== initialLength) {
+    await notificationDoc.save();
+  }
+
   return notificationDoc.notifications;
 }
 
