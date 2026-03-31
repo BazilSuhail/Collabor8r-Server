@@ -50,15 +50,15 @@ exports.getTasksByProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found.' });
 
     const projectTasks = await Task.find({ projectId: req.params.projectId });
-    const tasks = await Promise.all(
-      projectTasks.map(async (task) => {
-        if (!task) return null;
-        const assignedTo = task.assignedTo
-          ? await Profile.findById(task.assignedTo).select('-_id email name avatar').lean()
-          : null;
-        return { ...task._doc, assignedTo };
-      })
-    );
+    const assignedIds = [...new Set(projectTasks.map((t) => t.assignedTo?.toString()).filter(Boolean))];
+    const users = assignedIds.length
+      ? await Profile.find({ _id: { $in: assignedIds } }).select('-_id email name avatar').lean()
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+    const tasks = projectTasks.map((task) => ({
+      ...task._doc,
+      assignedTo: task.assignedTo ? userMap[task.assignedTo.toString()] || null : null,
+    }));
 
     res.status(200).json({ projectName: project.name, validTasks: tasks.filter(Boolean), projectTeam: project.team.length });
   } catch (err) {

@@ -9,9 +9,14 @@ exports.fetchAssignedTasks = async (req, res) => {
     if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
 
     const tasks = await Tasks.find({ _id: { $in: assignedTasksDoc.assignTasks } });
-    const tasksWithProject = await Promise.all(tasks.map(async (task) => {
-      const project = await Project.findById(task.projectId);
-      return { ...task._doc, projectName: project ? project.name : 'No Project Assigned' };
+    const projectIds = [...new Set(tasks.map((t) => t.projectId?.toString()).filter(Boolean))];
+    const projects = projectIds.length
+      ? await Project.find({ _id: { $in: projectIds } }).select('name').lean()
+      : [];
+    const projectMap = Object.fromEntries(projects.map((p) => [p._id.toString(), p]));
+    const tasksWithProject = tasks.map((task) => ({
+      ...task._doc,
+      projectName: projectMap[task.projectId?.toString()]?.name || 'No Project Assigned',
     }));
 
     res.status(200).json({ tasks: tasksWithProject });

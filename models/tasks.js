@@ -83,12 +83,6 @@ const taskSchema = new mongoose.Schema({
       uploadedAt: { type: Date, default: Date.now }
     }
   ],
-  comments: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Comment',
-    },
-  ],
 }, { timestamps: true });
 
 taskSchema.index({ projectId: 1 });

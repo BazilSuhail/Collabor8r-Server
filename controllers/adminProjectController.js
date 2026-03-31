@@ -16,24 +16,30 @@ exports.getCreatedProjects = async (req, res) => {
     const projectList = projects.filter(Boolean);
 
     const leadIds = [...new Set(projectList.flatMap((p) => p.leads || []))];
-    const leads = leadIds.length
-      ? await Profile.find({ _id: { $in: leadIds } }).select('name email avatar').lean()
-      : [];
-    const leadMap = Object.fromEntries(leads.map((l) => [l._id.toString(), l]));
+    const createdByIds = [...new Set(projectList.map((p) => p.createdBy?.toString()).filter(Boolean))];
+    const projectIds = projectList.map((p) => p._id);
 
-    const createdByMap = {};
-    for (const p of projectList) {
-      if (p.createdBy && !createdByMap[p.createdBy.toString()]) {
-        const creator = await Profile.findById(p.createdBy).select('name email avatar').lean();
-        createdByMap[p.createdBy.toString()] = creator;
-      }
+    const [leads, creators, allTasks] = await Promise.all([
+      leadIds.length ? Profile.find({ _id: { $in: leadIds } }).select('name email avatar').lean() : [],
+      createdByIds.length ? Profile.find({ _id: { $in: createdByIds } }).select('name email avatar').lean() : [],
+      Task.find({ projectId: { $in: projectIds } }).select('projectId status progress').lean(),
+    ]);
+
+    const leadMap = Object.fromEntries(leads.map((l) => [l._id.toString(), l]));
+    const createdByMap = Object.fromEntries(creators.map((c) => [c._id.toString(), c]));
+
+    const tasksByProject = {};
+    for (const t of allTasks) {
+      const pid = t.projectId.toString();
+      if (!tasksByProject[pid]) tasksByProject[pid] = [];
+      tasksByProject[pid].push(t);
     }
 
-    const result = await Promise.all(projectList.map(async (project) => {
+    const result = projectList.map((project) => {
+      const pid = project._id.toString();
+      const tasks = tasksByProject[pid] || [];
       const taskStatuses = { 'Not Started': 0, 'In Progress': 0, Paused: 0, Completed: 0 };
       let progressSum = 0;
-
-      const tasks = await Task.find({ projectId: project._id }).select('status progress').lean();
       for (const t of tasks) {
         taskStatuses[t.status] = (taskStatuses[t.status] || 0) + 1;
         progressSum += t.progress || 0;
@@ -53,7 +59,7 @@ exports.getCreatedProjects = async (req, res) => {
           avgProgress: tasks.length ? Math.round(progressSum / tasks.length) : 0,
         },
       };
-    }));
+    });
 
     res.status(200).json(result);
   } catch (err) {
@@ -66,18 +72,22 @@ exports.getProjectDetails = async (req, res) => {
     const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const [teamDetails, tasks, leadDetails] = await Promise.all([
-      Promise.all(project.team.map((id) => Profile.findById(id).select('name email avatar -_id'))),
+    const allMemberIds = [...new Set([
+      ...project.team.map((id) => id.toString()),
+      ...project.leads.map((id) => id.toString()),
+    ])];
+    const [allMembers, tasks] = await Promise.all([
+      allMemberIds.length ? Profile.find({ _id: { $in: allMemberIds } }).select('name email avatar').lean() : [],
       Task.find({ projectId: req.params.projectId }).select('title priority dueDate -_id').limit(5),
-      Promise.all(project.leads.map((id) => Profile.findById(id).select('name email avatar'))),
     ]);
+    const memberMap = Object.fromEntries(allMembers.map((m) => [m._id.toString(), m]));
 
     res.status(200).json({
       ...project.toObject(),
-      team: teamDetails.filter(Boolean),
-      leads: leadDetails.filter(Boolean),
+      team: project.team.map((id) => memberMap[id.toString()]).filter(Boolean),
+      leads: project.leads.map((id) => memberMap[id.toString()]).filter(Boolean),
       taskCount: tasks.length,
-      tasks: tasks.filter(Boolean),
+      tasks,
     });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

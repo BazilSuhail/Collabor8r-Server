@@ -11,10 +11,15 @@ exports.getCommentsForTask = async (req, res) => {
     const task = await Task.findById(req.params.taskId).lean();
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    const comments = await Comment.find({ _id: { $in: task.comments } }).lean();
-    const commentsWithUser = await Promise.all(comments.map(async (c) => {
-      const user = await Profile.findById(c.userId, 'name email avatar').lean();
-      return { ...c, user: user || { name: 'Unknown', email: 'N/A', avatar: null } };
+    const comments = await Comment.find({ taskId: req.params.taskId }).lean();
+    const userIds = [...new Set(comments.map((c) => c.userId?.toString()).filter(Boolean))];
+    const users = userIds.length
+      ? await Profile.find({ _id: { $in: userIds } }).select('name email avatar').lean()
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+    const commentsWithUser = comments.map((c) => ({
+      ...c,
+      user: userMap[c.userId?.toString()] || { name: 'Unknown', email: 'N/A', avatar: null },
     }));
 
     res.status(200).json({ comments: commentsWithUser });
@@ -29,7 +34,7 @@ exports.summarizeComments = async (req, res) => {
     const task = await Task.findById(taskId).lean();
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    const comments = await Comment.find({ _id: { $in: task.comments } })
+    const comments = await Comment.find({ taskId })
       .populate('userId', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -58,7 +63,6 @@ exports.addCommentToTask = async (req, res) => {
 
     const comment = new Comment({ content, userId: userId || req.user.id, taskId });
     await comment.save();
-    await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id } });
 
     const task = await Task.findById(taskId).select('projectId title').lean();
 
@@ -112,7 +116,6 @@ exports.deleteComment = async (req, res) => {
     const comment = await Comment.findByIdAndDelete(req.params.commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
-    await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id } });
     await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
 
     const task = await Task.findById(comment.taskId).select('projectId title').lean();

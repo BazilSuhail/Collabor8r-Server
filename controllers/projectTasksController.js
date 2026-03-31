@@ -8,10 +8,14 @@ exports.getProjectTasks = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const tasks = await Task.find({ projectId: req.params.projectId });
-    const tasksWithUsers = await Promise.all(tasks.map(async (task) => {
-      if (!task) return null;
-      const user = task.assignedTo ? await Profile.findById(task.assignedTo).select('name email avatar').lean() : null;
-      return { task, user };
+    const assignedIds = [...new Set(tasks.map((t) => t.assignedTo?.toString()).filter(Boolean))];
+    const users = assignedIds.length
+      ? await Profile.find({ _id: { $in: assignedIds } }).select('name email avatar').lean()
+      : [];
+    const userMap = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+    const tasksWithUsers = tasks.map((task) => ({
+      task,
+      user: task.assignedTo ? userMap[task.assignedTo.toString()] || null : null,
     }));
 
     res.status(200).json({ project, tasks: tasksWithUsers.filter(Boolean) });
