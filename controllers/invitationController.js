@@ -7,7 +7,7 @@
 const Invitation = require('../models/invitation');
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 const { projectService } = require('../services');
 const { sendNotification } = require('../services/notificationService');
 const { sendInvitationEvent } = require('../socket');
@@ -100,13 +100,13 @@ exports.acceptInvitation = async (req, res) => {
         if (invite.role === 'lead') {
           await Project.findByIdAndUpdate(invite.projectId, { $addToSet: { leads: profile._id } });
 
-          let joinProject = await JoinProject.findById(profile._id);
-          if (!joinProject) {
-            joinProject = new JoinProject({ _id: profile._id, projects: [], asLead: [invite.projectId] });
-            await joinProject.save();
-          } else if (!joinProject.asLead.includes(invite.projectId)) {
-            joinProject.asLead.push(invite.projectId);
-            await joinProject.save();
+          let membership = await Membership.findById(profile._id);
+          if (!membership) {
+            membership = new Membership({ _id: profile._id, projects: [], asLead: [invite.projectId] });
+            await membership.save();
+          } else if (!membership.asLead.includes(invite.projectId)) {
+            membership.asLead.push(invite.projectId);
+            await membership.save();
           }
         }
       }

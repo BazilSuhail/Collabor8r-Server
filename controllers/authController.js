@@ -2,8 +2,7 @@ const Profile = require('../models/profile');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const AssignedTask = require('../models/assignTasks');
-const AdminProject = require('../models/adminProjects');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 const Notification = require('../models/notifications');
 const VerificationCode = require('../models/verificationCode');
 const { generateCode, sendVerificationCode } = require('../utils/email');
@@ -37,8 +36,7 @@ exports.signUp = async (req, res) => {
     const userId = profile._id;
     await Promise.all([
       new AssignedTask({ _id: userId, assignTasks: [] }).save(),
-      new AdminProject({ _id: userId, projects: [] }).save(),
-      new JoinProject({ _id: userId, projects: [], asLead: [] }).save(),
+      new Membership({ _id: userId, projects: [], asLead: [] }).save(),
       new Notification({ _id: userId, notifications: [] }).save(),
     ]);
 
@@ -177,8 +175,7 @@ exports.signUpWithCode = async (req, res) => {
     const userId = profile._id;
     await Promise.all([
       new AssignedTask({ _id: userId, assignTasks: [] }).save(),
-      new AdminProject({ _id: userId, projects: [] }).save(),
-      new JoinProject({ _id: userId, projects: [], asLead: [] }).save(),
+      new Membership({ _id: userId, projects: [], asLead: [] }).save(),
       new Notification({ _id: userId, notifications: [] }).save(),
     ]);
 

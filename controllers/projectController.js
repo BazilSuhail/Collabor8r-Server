@@ -1,6 +1,6 @@
 const Project = require('../models/projects');
 const Profile = require('../models/profile');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 const Invitation = require('../models/invitation');
 const { projectService } = require('../services');
 const { sendNotification } = require('../services/notificationService');
@@ -177,22 +177,24 @@ exports.updateProject = async (req, res) => {
 
 exports.projectSummary = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId).populate('tasks');
+    const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
+    const tasks = await Task.find({ projectId: req.params.projectId });
+
     const statusCounts = { 'Not Started': 0, 'In Progress': 0, 'Paused': 0, 'Completed': 0 };
-    project.tasks.forEach((t) => { if (statusCounts[t.status] !== undefined) statusCounts[t.status]++; });
+    tasks.forEach((t) => { if (statusCounts[t.status] !== undefined) statusCounts[t.status]++; });
 
     const prompt = [
       `Project: ${project.name}`,
-      `Total tasks: ${project.tasks.length}`,
+      `Total tasks: ${tasks.length}`,
       `Status breakdown: ${JSON.stringify(statusCounts)}`,
       `Team size: ${project.team.length}`,
       'Write a brief 2-3 sentence project status summary.',
     ].join('\n');
 
     const summary = await promptLLM(prompt, { temperature: 0.3, maxTokens: 300 });
-    res.json({ summary, stats: { totalTasks: project.tasks.length, ...statusCounts } });
+    res.json({ summary, stats: { totalTasks: tasks.length, ...statusCounts } });
   } catch (err) {
     res.status(500).json({ error: 'AI summary failed', detail: err.message });
   }
@@ -209,13 +211,13 @@ exports.leadResponse = async (req, res) => {
     if (response === 'Accept') {
       await Project.findByIdAndUpdate(projectId, { $addToSet: { leads: req.user.id } }, { new: true });
 
-      let joinProject = await JoinProject.findById(req.user.id);
-      if (!joinProject) {
-        joinProject = new JoinProject({ _id: req.user.id, asLead: [projectId], projects: [] });
-        await joinProject.save();
-      } else if (!joinProject.asLead.includes(projectId)) {
-        joinProject.asLead.push(projectId);
-        await joinProject.save();
+      let membership = await Membership.findById(req.user.id);
+      if (!membership) {
+        membership = new Membership({ _id: req.user.id, asLead: [projectId], projects: [] });
+        await membership.save();
+      } else if (!membership.asLead.includes(projectId)) {
+        membership.asLead.push(projectId);
+        await membership.save();
       }
     }
 

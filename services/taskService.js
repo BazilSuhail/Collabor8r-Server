@@ -1,5 +1,4 @@
 const Task = require('../models/tasks');
-const Project = require('../models/projects');
 const AssignedTask = require('../models/assignTasks');
 const Profile = require('../models/profile');
 const { logActivity } = require('../utils/activityLogger');
@@ -25,10 +24,6 @@ async function createTask(data, userId) {
   const newTask = new Task(taskData);
 
   const savedTask = await newTask.save();
-
-  await Project.findByIdAndUpdate(projectId, {
-    $push: { tasks: savedTask._id },
-  });
 
   if (assignedTo) {
     let assignedTask = await AssignedTask.findById(assignedTo);
@@ -133,7 +128,6 @@ async function deleteTask(taskId, userId) {
   if (!task) throw new Error('Task not found');
 
   await AssignedTask.findByIdAndUpdate(task.assignedTo, { $pull: { assignTasks: taskId } });
-  await Project.findByIdAndUpdate(task.projectId, { $pull: { tasks: taskId } });
   await Task.findByIdAndDelete(taskId);
 
   await logActivity({

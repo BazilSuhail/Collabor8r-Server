@@ -17,7 +17,7 @@ exports.getProjectTasks = async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found.' });
 
     const [projectTasks, profile] = await Promise.all([
-      Task.find({ _id: { $in: project.tasks } }),
+      Task.find({ projectId: req.params.projectId }),
       Profile.findById(req.user.id),
     ]);
 

@@ -91,4 +91,7 @@ const taskSchema = new mongoose.Schema({
   ],
 }, { timestamps: true });
 
+taskSchema.index({ projectId: 1 });
+taskSchema.index({ sprintId: 1 });
+
 module.exports = mongoose.model('Task', taskSchema);

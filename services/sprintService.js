@@ -44,14 +44,10 @@ async function addTasksToSprint(sprintId, taskIds, userId) {
   const sprint = await Sprint.findById(sprintId);
   if (!sprint) throw new Error('Sprint not found');
 
-  for (const taskId of taskIds) {
-    if (!sprint.tasks.includes(taskId)) {
-      sprint.tasks.push(taskId);
-      await Task.findByIdAndUpdate(taskId, { sprintId });
-    }
-  }
-
-  await sprint.save();
+  await Task.updateMany(
+    { _id: { $in: taskIds } },
+    { sprintId },
+  );
 
   await logActivity({
     actorId: userId,
@@ -78,9 +74,6 @@ async function addTasksToSprint(sprintId, taskIds, userId) {
 async function removeTasksFromSprint(sprintId, taskIds, userId) {
   const sprint = await Sprint.findById(sprintId);
   if (!sprint) throw new Error('Sprint not found');
-
-  sprint.tasks = sprint.tasks.filter((t) => !taskIds.includes(String(t)));
-  await sprint.save();
 
   await Task.updateMany(
     { _id: { $in: taskIds }, sprintId },

@@ -1,7 +1,7 @@
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
 const Task = require('../models/tasks');
-const AdminProject = require('../models/adminProjects');
+const Membership = require('../models/membership');
 const Invitation = require('../models/invitation');
 const { sendNotification } = require('../services/notificationService');
 const { sendInvitationEvent } = require('../socket');
@@ -9,10 +9,10 @@ const { logActivity } = require('../utils/activityLogger');
 
 exports.getCreatedProjects = async (req, res) => {
   try {
-    const adminProjects = await AdminProject.findById(req.user.id);
-    if (!adminProjects) return res.status(404).json({ error: 'Admin projects not found.' });
+    const membership = await Membership.findById(req.user.id);
+    if (!membership) return res.status(404).json({ error: 'Membership not found.' });
 
-    const projects = await Promise.all(adminProjects.projects.map((id) => Project.findById(id).lean()));
+    const projects = await Promise.all(membership.projects.map((id) => Project.findById(id).lean()));
     const projectList = projects.filter(Boolean);
 
     const leadIds = [...new Set(projectList.flatMap((p) => p.leads || []))];
@@ -32,28 +32,25 @@ exports.getCreatedProjects = async (req, res) => {
     const result = await Promise.all(projectList.map(async (project) => {
       const taskStatuses = { 'Not Started': 0, 'In Progress': 0, Paused: 0, Completed: 0 };
       let progressSum = 0;
-      const taskIds = project.tasks || [];
 
-      if (taskIds.length) {
-        const tasks = await Task.find({ _id: { $in: taskIds } }).select('status progress').lean();
-        for (const t of tasks) {
-          taskStatuses[t.status] = (taskStatuses[t.status] || 0) + 1;
-          progressSum += t.progress || 0;
-        }
+      const tasks = await Task.find({ projectId: project._id }).select('status progress').lean();
+      for (const t of tasks) {
+        taskStatuses[t.status] = (taskStatuses[t.status] || 0) + 1;
+        progressSum += t.progress || 0;
       }
 
       return {
         ...project,
         leads: (project.leads || []).map((id) => leadMap[id.toString()] || id),
         createdBy: createdByMap[project.createdBy?.toString()] || null,
-        taskCount: taskIds.length,
+        taskCount: tasks.length,
         teamCount: project.team?.length || 0,
         stats: {
           notStarted: taskStatuses['Not Started'],
           inProgress: taskStatuses['In Progress'],
           paused: taskStatuses.Paused,
           completed: taskStatuses.Completed,
-          avgProgress: taskIds.length ? Math.round(progressSum / taskIds.length) : 0,
+          avgProgress: tasks.length ? Math.round(progressSum / tasks.length) : 0,
         },
       };
     }));
@@ -69,9 +66,9 @@ exports.getProjectDetails = async (req, res) => {
     const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const [teamDetails, taskDetails, leadDetails] = await Promise.all([
+    const [teamDetails, tasks, leadDetails] = await Promise.all([
       Promise.all(project.team.map((id) => Profile.findById(id).select('name email avatar -_id'))),
-      Promise.all(project.tasks.slice(0, 5).map((id) => Task.findById(id, 'title priority dueDate -_id'))),
+      Task.find({ projectId: req.params.projectId }).select('title priority dueDate -_id').limit(5),
       Promise.all(project.leads.map((id) => Profile.findById(id).select('name email avatar'))),
     ]);
 
@@ -79,8 +76,8 @@ exports.getProjectDetails = async (req, res) => {
       ...project.toObject(),
       team: teamDetails.filter(Boolean),
       leads: leadDetails.filter(Boolean),
-      taskCount: project.tasks.length,
-      tasks: taskDetails.filter(Boolean),
+      taskCount: tasks.length,
+      tasks: tasks.filter(Boolean),
     });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

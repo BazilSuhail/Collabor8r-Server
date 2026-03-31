@@ -1,6 +1,6 @@
 const Profile = require('../models/profile');
 const Project = require('../models/projects');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 const { logActivity } = require('../utils/activityLogger');
 
 exports.getAllUsersFromProject = async (req, res) => {
@@ -17,13 +17,14 @@ exports.getAllUsersFromProject = async (req, res) => {
 
 exports.getProjectWithUserDetails = async (req, res) => {
   try {
-    const project = await Project.findById(req.body.projectId).populate('tasks');
+    const project = await Project.findById(req.body.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
+    const tasks = await require('../models/tasks').find({ projectId: req.body.projectId });
     const user = await Profile.findById(project.createdBy);
     if (!user) return res.status(404).json({ error: 'Creator not found' });
 
-    res.status(200).json({ project, createdBy: user });
+    res.status(200).json({ project: { ...project.toObject(), tasks }, createdBy: user });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -42,13 +43,13 @@ exports.acceptProjectInvite = async (req, res) => {
       await project.save();
     }
 
-    let joinProject = await JoinProject.findById(userId);
-    if (!joinProject) {
-      joinProject = new JoinProject({ _id: userId, projects: [projectId], asLead: [] });
-      await joinProject.save();
-    } else if (!joinProject.projects.includes(projectId)) {
-      joinProject.projects.push(projectId);
-      await joinProject.save();
+    let membership = await Membership.findById(userId);
+    if (!membership) {
+      membership = new Membership({ _id: userId, projects: [projectId], asLead: [] });
+      await membership.save();
+    } else if (!membership.projects.includes(projectId)) {
+      membership.projects.push(projectId);
+      await membership.save();
     }
 
     await logActivity({

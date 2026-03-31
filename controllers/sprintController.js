@@ -42,9 +42,10 @@ exports.createSprint = async (req, res) => {
 
 exports.getSprint = async (req, res) => {
   try {
-    const sprint = await Sprint.findById(req.params.sprintId).populate('tasks');
+    const sprint = await Sprint.findById(req.params.sprintId);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
-    res.json(sprint);
+    const tasks = await require('../models/tasks').find({ sprintId: sprint._id });
+    res.json({ ...sprint.toObject(), tasks });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch sprint' });
   }
@@ -184,19 +185,21 @@ exports.removeTasksFromSprint = async (req, res) => {
 
 exports.sprintRetrospective = async (req, res) => {
   try {
-    const sprint = await Sprint.findById(req.params.sprintId).populate('tasks');
+    const sprint = await Sprint.findById(req.params.sprintId);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
 
-    const completed = sprint.tasks.filter((t) => t.status === 'Completed').length;
+    const tasks = await require('../models/tasks').find({ sprintId: sprint._id });
+
+    const completed = tasks.filter((t) => t.status === 'Completed').length;
     const statusBreakdown = {};
-    sprint.tasks.forEach((t) => { statusBreakdown[t.status] = (statusBreakdown[t.status] || 0) + 1; });
+    tasks.forEach((t) => { statusBreakdown[t.status] = (statusBreakdown[t.status] || 0) + 1; });
 
     const data = [
       `Sprint: ${sprint.name}`,
       `Goal: ${sprint.goal || 'N/A'}`,
-      `Total tasks: ${sprint.tasks.length}`,
+      `Total tasks: ${tasks.length}`,
       `Completed: ${completed}`,
-      `Incomplete: ${sprint.tasks.length - completed}`,
+      `Incomplete: ${tasks.length - completed}`,
       `Breakdown: ${JSON.stringify(statusBreakdown)}`,
     ].join('\n');
 
@@ -207,7 +210,7 @@ exports.sprintRetrospective = async (req, res) => {
       { temperature: 0.4 }
     );
 
-    res.json({ ...result, stats: { totalTasks: sprint.tasks.length, completed, incomplete: sprint.tasks.length - completed } });
+    res.json({ ...result, stats: { totalTasks: tasks.length, completed, incomplete: tasks.length - completed } });
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate retrospective', detail: err.message });
   }

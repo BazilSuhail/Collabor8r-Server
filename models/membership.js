@@ -1,17 +1,17 @@
 const mongoose = require('mongoose');
 
-const joinProjectSchema = new mongoose.Schema({
+const membershipSchema = new mongoose.Schema({
   _id: {
-    type: mongoose.Schema.Types.ObjectId, // Same ID as the user's Profile document
+    type: mongoose.Schema.Types.ObjectId,
     required: true,
   },
-  asLead: [
+  projects: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Project',
     },
   ],
-  projects: [
+  asLead: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Project',
@@ -19,4 +19,4 @@ const joinProjectSchema = new mongoose.Schema({
   ],
 });
 
-module.exports = mongoose.model('JoinProject', joinProjectSchema);
+module.exports = mongoose.model('Membership', membershipSchema);

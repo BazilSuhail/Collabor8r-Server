@@ -4,10 +4,11 @@ const Profile = require('../models/profile');
 
 exports.getProjectTasks = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId).populate('tasks');
+    const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const tasksWithUsers = await Promise.all(project.tasks.map(async (task) => {
+    const tasks = await Task.find({ projectId: req.params.projectId });
+    const tasksWithUsers = await Promise.all(tasks.map(async (task) => {
       if (!task) return null;
       const user = task.assignedTo ? await Profile.findById(task.assignedTo).select('name email avatar').lean() : null;
       return { task, user };

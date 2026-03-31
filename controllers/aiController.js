@@ -19,11 +19,11 @@ exports.draftTask = async (req, res) => {
 
     let context = '';
     if (projectId) {
-      const project = await Project.findById(projectId).select('name team tasks').lean();
+      const project = await Project.findById(projectId).select('name team').lean();
       if (project) {
         const [members, existingTasks] = await Promise.all([
           Profile.find({ _id: { $in: project.team } }).select('name email').lean(),
-          Task.find({ _id: { $in: project.tasks } }).select('title').limit(50).lean(),
+          Task.find({ projectId }).select('title').limit(50).lean(),
         ]);
         context = [
           `Project: ${project.name}`,
@@ -225,16 +225,18 @@ exports.summarizeComments = async (req, res) => {
 
 exports.projectSummary = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId).populate('tasks');
+    const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
+    const tasks = await Task.find({ projectId: req.params.projectId });
+
     const statusCounts = { 'Not Started': 0, 'In Progress': 0, 'Paused': 0, 'Completed': 0 };
-    project.tasks.forEach((t) => { if (statusCounts[t.status] !== undefined) statusCounts[t.status]++; });
+    tasks.forEach((t) => { if (statusCounts[t.status] !== undefined) statusCounts[t.status]++; });
 
     const summary = await promptLLM(
       [
         `Project: ${project.name}`,
-        `Total tasks: ${project.tasks.length}`,
+        `Total tasks: ${tasks.length}`,
         `Status breakdown: ${JSON.stringify(statusCounts)}`,
         `Team size: ${project.team.length}`,
         'Write a brief 2-3 sentence project status summary.',
@@ -242,7 +244,7 @@ exports.projectSummary = async (req, res) => {
       { temperature: 0.3, maxTokens: 300 }
     );
 
-    res.json({ summary, stats: { totalTasks: project.tasks.length, ...statusCounts } });
+    res.json({ summary, stats: { totalTasks: tasks.length, ...statusCounts } });
   } catch (err) {
     res.status(500).json({ error: 'AI summary failed', detail: err.message });
   }
@@ -253,14 +255,16 @@ exports.detectRisks = async (req, res) => {
     const { projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
 
-    const project = await Project.findById(projectId).select('name tasks').populate('tasks');
+    const project = await Project.findById(projectId).select('name');
     if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const tasks = await Task.find({ projectId });
 
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-    const overdue = project.tasks.filter((t) => t.status !== 'Completed' && t.dueDate && new Date(t.dueDate) < now);
-    const stalled = project.tasks.filter((t) => t.status === 'In Progress' && new Date(t.updatedAt || t.createdAt) < weekAgo);
-    const unassigned = project.tasks.filter((t) => !t.assignedTo);
+    const overdue = tasks.filter((t) => t.status !== 'Completed' && t.dueDate && new Date(t.dueDate) < now);
+    const stalled = tasks.filter((t) => t.status === 'In Progress' && new Date(t.updatedAt || t.createdAt) < weekAgo);
+    const unassigned = tasks.filter((t) => !t.assignedTo);
 
     const data = [
       `Project: ${project.name}`,
@@ -278,7 +282,7 @@ exports.detectRisks = async (req, res) => {
 
     res.json({
       risks: Array.isArray(parsed.risks) ? parsed.risks : [],
-      stats: { totalTasks: project.tasks.length, overdue: overdue.length, stalled: stalled.length, unassigned: unassigned.length },
+      stats: { totalTasks: tasks.length, overdue: overdue.length, stalled: stalled.length, unassigned: unassigned.length },
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to detect risks', detail: err.message });
@@ -315,12 +319,12 @@ exports.roadmap = async (req, res) => {
     const { projectId, goal } = req.body;
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
 
-    const project = await Project.findById(projectId).select('name description objectives team tasks').lean();
+    const project = await Project.findById(projectId).select('name description objectives team').lean();
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const [members, existingTasks] = await Promise.all([
       Profile.find({ _id: { $in: project.team } }).select('name email').lean(),
-      Task.find({ _id: { $in: project.tasks } }).select('title status').limit(100).lean(),
+      Task.find({ projectId }).select('title status').limit(100).lean(),
     ]);
 
     const context = [
@@ -368,12 +372,12 @@ exports.suggestTasks = async (req, res) => {
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     if (!prompt?.trim() && !roadmap) return res.status(400).json({ error: 'prompt or roadmap is required' });
 
-    const project = await Project.findById(projectId).select('name team tasks').lean();
+    const project = await Project.findById(projectId).select('name team').lean();
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const [members, existingTasks] = await Promise.all([
       Profile.find({ _id: { $in: project.team } }).select('name email').lean(),
-      Task.find({ _id: { $in: project.tasks } }).select('title').limit(100).lean(),
+      Task.find({ projectId }).select('title').limit(100).lean(),
     ]);
 
     const context = [
@@ -526,19 +530,21 @@ exports.retrospective = async (req, res) => {
     const { sprintId } = req.body;
     if (!sprintId) return res.status(400).json({ error: 'sprintId is required' });
 
-    const sprint = await Sprint.findById(sprintId).populate('tasks');
+    const sprint = await Sprint.findById(sprintId);
     if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
 
-    const completed = sprint.tasks.filter((t) => t.status === 'Completed').length;
+    const tasks = await Task.find({ sprintId });
+
+    const completed = tasks.filter((t) => t.status === 'Completed').length;
     const statusBreakdown = {};
-    sprint.tasks.forEach((t) => { statusBreakdown[t.status] = (statusBreakdown[t.status] || 0) + 1; });
+    tasks.forEach((t) => { statusBreakdown[t.status] = (statusBreakdown[t.status] || 0) + 1; });
 
     const schema = '{ "whatWentWell": [string], "whatCouldImprove": [string], "actionItems": [string] }';
     const parsed = await promptLLMStructured(
       [
         `Sprint: ${sprint.name}`,
         `Goal: ${sprint.goal || 'N/A'}`,
-        `Total tasks: ${sprint.tasks.length}`,
+        `Total tasks: ${tasks.length}`,
         `Completed: ${completed}`,
         `Breakdown: ${JSON.stringify(statusBreakdown)}`,
       ].join('\n'),
@@ -546,7 +552,7 @@ exports.retrospective = async (req, res) => {
       { temperature: 0.4 }
     );
 
-    res.json({ ...parsed, stats: { totalTasks: sprint.tasks.length, completed, incomplete: sprint.tasks.length - completed } });
+    res.json({ ...parsed, stats: { totalTasks: tasks.length, completed, incomplete: tasks.length - completed } });
   } catch (err) {
     res.status(500).json({ error: 'Failed to generate retrospective', detail: err.message });
   }

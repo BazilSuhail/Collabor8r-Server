@@ -1,6 +1,5 @@
 const Project = require('../models/projects');
-const AdminProject = require('../models/adminProjects');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 const Profile = require('../models/profile');
 const Invitation = require('../models/invitation');
 const Notification = require('../models/notifications');
@@ -33,12 +32,12 @@ async function createProject(data, userId) {
 
   await newProject.save();
 
-  let adminProject = await AdminProject.findById(userId);
-  if (!adminProject) {
-    adminProject = new AdminProject({ _id: userId, projects: [] });
+  let membership = await Membership.findById(userId);
+  if (!membership) {
+    membership = new Membership({ _id: userId, projects: [] });
   }
-  adminProject.projects.push(newProject._id);
-  await adminProject.save();
+  membership.projects.push(newProject._id);
+  await membership.save();
 
   if (leadEmail) {
     const [leadProfile, sender] = await Promise.all([
@@ -104,13 +103,13 @@ async function addTeamMember(projectId, memberId, userId) {
   project.team.push(memberId);
   await project.save();
 
-  let joinProject = await JoinProject.findById(memberId);
-  if (!joinProject) {
-    joinProject = new JoinProject({ _id: memberId, projects: [projectId] });
-    await joinProject.save();
-  } else if (!joinProject.projects.includes(projectId)) {
-    joinProject.projects.push(projectId);
-    await joinProject.save();
+  let membership = await Membership.findById(memberId);
+  if (!membership) {
+    membership = new Membership({ _id: memberId, projects: [projectId] });
+    await membership.save();
+  } else if (!membership.projects.includes(projectId)) {
+    membership.projects.push(projectId);
+    await membership.save();
   }
 
   await logActivity({

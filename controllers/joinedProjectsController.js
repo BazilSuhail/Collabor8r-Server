@@ -1,20 +1,22 @@
 const Project = require('../models/projects');
 const Profile = require('../models/profile');
+const Task = require('../models/tasks');
 
 const formatProject = async (projectId) => {
   const project = await Project.findById(projectId)
-    .select('name description createdBy leads theme tasks team')
+    .select('name description createdBy leads theme')
     .lean();
   if (!project) return null;
   const admin = project.createdBy ? await Profile.findById(project.createdBy).select('name avatar').lean() : null;
   const leads = project.leads?.length
     ? await Profile.find({ _id: { $in: project.leads } }).select('name email avatar').lean()
     : [];
+  const taskCount = await Task.countDocuments({ projectId });
   return {
     _id: project._id, name: project.name, leads,
     theme: project.theme, description: project.description,
     createdBy: admin ? { name: admin.name, avatar: admin.avatar } : null,
-    taskCount: project.tasks?.length || 0,
+    taskCount,
     teamCount: project.team?.length || 0,
   };
 };

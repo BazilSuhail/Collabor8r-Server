@@ -1,8 +1,7 @@
 const AssignedTasks = require('../models/assignTasks');
 const Tasks = require('../models/tasks');
 const Project = require('../models/projects');
-const AdminProject = require('../models/adminProjects');
-const JoinProject = require('../models/joinProjects');
+const Membership = require('../models/membership');
 
 exports.fetchAssignedTasks = async (req, res) => {  
   try {
@@ -23,21 +22,24 @@ exports.fetchAssignedTasks = async (req, res) => {
 
 exports.fetchProgressOverview = async (req, res) => {
   try {
-    const [assignedTasksDoc, adminProjects, joinedProjects] = await Promise.all([
+    const [assignedTasksDoc, membership] = await Promise.all([
       AssignedTasks.findById(req.user.id),
-      AdminProject.findById(req.user.id).select('projects -_id'),
-      JoinProject.findById(req.user.id).select('asLead projects -_id'),
+      Membership.findById(req.user.id).select('projects asLead -_id'),
     ]);
 
     if (!assignedTasksDoc) return res.status(404).json({ error: 'No assigned tasks found' });
 
     const tasks = await Tasks.find({ _id: { $in: assignedTasksDoc.assignTasks } }).select('title progress status').lean();
 
+    const adminCount = membership?.projects?.length
+      ? (await Project.find({ _id: { $in: membership.projects }, createdBy: req.user.id }).select('_id').lean()).length
+      : 0;
+
     res.status(200).json({
       projectCounts: {
-        adminProjectsCount: adminProjects?.projects?.length || 0,
-        joinedProjectsCount: joinedProjects?.projects?.length || 0,
-        leadProjectCount: joinedProjects?.asLead?.length || 0,
+        adminProjectsCount: adminCount,
+        joinedProjectsCount: (membership?.projects?.length || 0) - adminCount,
+        leadProjectCount: membership?.asLead?.length || 0,
       },
       tasks,
     });

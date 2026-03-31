@@ -103,12 +103,6 @@ const projectSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Profile'
     }
-  ],
-  tasks: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Task'
-    }
   ]
 }, { timestamps: true });
 

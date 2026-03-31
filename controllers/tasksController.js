@@ -46,17 +46,17 @@ exports.createTask = async (req, res) => {
 
 exports.getTasksByProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId).select('tasks name team');
+    const project = await Project.findById(req.params.projectId).select('name team');
     if (!project) return res.status(404).json({ message: 'Project not found.' });
 
+    const projectTasks = await Task.find({ projectId: req.params.projectId });
     const tasks = await Promise.all(
-      project.tasks.map(async (taskId) => {
-        const task = await Task.findById(taskId).select('-comments').lean();
+      projectTasks.map(async (task) => {
         if (!task) return null;
         const assignedTo = task.assignedTo
           ? await Profile.findById(task.assignedTo).select('-_id email name avatar').lean()
           : null;
-        return { ...task, assignedTo };
+        return { ...task._doc, assignedTo };
       })
     );
 
