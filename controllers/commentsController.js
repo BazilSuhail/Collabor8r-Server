@@ -58,7 +58,7 @@ exports.addCommentToTask = async (req, res) => {
 
     const comment = new Comment({ content, userId: userId || req.user.id, taskId });
     await comment.save();
-    await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id.toString() } });
+    await Task.findByIdAndUpdate(taskId, { $push: { comments: comment._id } });
 
     const task = await Task.findById(taskId).select('projectId title').lean();
 
@@ -112,7 +112,7 @@ exports.deleteComment = async (req, res) => {
     const comment = await Comment.findByIdAndDelete(req.params.commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
-    await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id.toString() } });
+    await Task.findByIdAndUpdate(comment.taskId, { $pull: { comments: comment._id } });
     await logActivity({ actorId: req.user.id, action: 'comment_deleted', entityType: 'comment', entityId: comment._id, entityName: comment.content?.slice(0, 50) });
 
     const task = await Task.findById(comment.taskId).select('projectId title').lean();

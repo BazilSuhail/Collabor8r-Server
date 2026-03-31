@@ -18,7 +18,6 @@ async function createProject(data, userId) {
   const newProject = new Project({
     name, theme, description,
     createdBy: userId,
-    owner: userId,
     about: about || '',
     objectives: Array.isArray(objectives) ? objectives : [],
     tags: Array.isArray(tags) ? tags : [],
@@ -136,20 +135,4 @@ async function addTeamMember(projectId, memberId, userId) {
   return project;
 }
 
-async function setProjectRole(projectId, memberId, role, userId) {
-  const project = await Project.findById(projectId);
-  if (!project) throw new Error('Project not found');
-
-  if (!project.roles) project.roles = [];
-  const existing = project.roles.find((r) => String(r.userId) === String(memberId));
-  if (existing) {
-    existing.role = role;
-  } else {
-    project.roles.push({ userId: memberId, role });
-  }
-
-  await project.save();
-  return project;
-}
-
-module.exports = { createProject, addTeamMember, setProjectRole };
+module.exports = { createProject, addTeamMember };

@@ -86,27 +86,10 @@ const projectSchema = new mongoose.Schema({
     ref: 'Profile',
     required: true
   },
-  owner: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Profile'
-  },
   leads: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Profile'
-    }
-  ],
-  roles: [
-    {
-      userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Profile'
-      },
-      role: {
-        type: String,
-        enum: ['owner', 'admin', 'member', 'viewer', 'reporter'],
-        default: 'member'
-      }
     }
   ],
   statuses: [

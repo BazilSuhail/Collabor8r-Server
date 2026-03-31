@@ -85,7 +85,8 @@ const taskSchema = new mongoose.Schema({
   ],
   comments: [
     {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Comment',
     },
   ],
 }, { timestamps: true });

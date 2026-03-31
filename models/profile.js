@@ -34,14 +34,6 @@ const profileSchema = new mongoose.Schema({
     type: String,
     default: "1"  
   },
-  adminProjects: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'AdminProject'
-  },
-  joinedProjects: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'JoinProject'
-  },
   assignedTasks: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Task'
