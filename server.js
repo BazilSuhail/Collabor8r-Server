@@ -65,6 +65,7 @@ app.use('/boards', require('./routes/boardRoutes'));
 app.use('/labels', require('./routes/labelRoutes'));
 app.use('/invitations', require('./routes/invitationRoutes'));
 app.use('/uploads', require('./routes/uploadRoutes'));
+app.use('/chat', require('./routes/chatRoutes'));
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

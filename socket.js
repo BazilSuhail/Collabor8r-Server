@@ -89,6 +89,38 @@ const initSocket = (server) => {
       }
     });
 
+    socket.on("chat:message", async (data) => {
+      const { projectId, content, type } = data || {};
+      if (!projectId || !content || !verifiedUserId) return;
+
+      try {
+        const ChatMessage = require("./models/chatMessage");
+        const Profile = require("./models/profile");
+
+        const message = await ChatMessage.create({
+          projectId,
+          userId: verifiedUserId,
+          content,
+          type: type || "text",
+        });
+
+        const user = await Profile.findById(verifiedUserId).select("name avatar").lean();
+
+        io.to(`project:${projectId}`).emit("chat:message", {
+          _id: message._id,
+          projectId,
+          userId: verifiedUserId,
+          content,
+          type: message.type,
+          createdAt: message.createdAt,
+          user: user || { name: "Unknown", avatar: null },
+        });
+      } catch (err) {
+        console.error("chat:message error:", err.message);
+        socket.emit("chat:error", { error: "Failed to send message" });
+      }
+    });
+
     socket.on("disconnect", async (reason) => {
       const wasUserId = socket.userId;
       for (const [key, value] of connectedUsers.entries()) {
