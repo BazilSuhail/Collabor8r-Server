@@ -1,17 +1,20 @@
 const { Queue, Worker } = require('bullmq');
 const { createRedisClient } = require('../config/redis');
 
-const connection = createRedisClient('activity-queue');
+if (!process.env.REDIS_URL) {
+  module.exports = { activityQueue: null };
+} else {
+  const connection = createRedisClient('activity-queue');
 
-const activityQueue = new Queue('activity-logs', { connection });
-const activityWorker = new Worker(
+  const activityQueue = new Queue('activity-logs', { connection });
+  const activityWorker = new Worker(
   'activity-logs',
   async (job) => {
     const { actorId, actorName, actorAvatar, action, entityType, entityId, entityName, projectId, projectName, changes, description } = job.data;
 
-    const ActivityLog = require('../models/activityLog');
-    const Profile = require('../models/profile');
-    const Project = require('../models/projects');
+    const { ActivityLog } = require('../activity/models');
+    const { Profile } = require('../auth/models');
+    const { Project } = require('../projects/models');
 
     const entryData = { actorId, action, entityType, entityId, changes, description };
 
@@ -57,4 +60,5 @@ activityWorker.on('completed', (job) => {
   console.log(`✅ Activity log job ${job.id} completed`);
 });
 
-module.exports = { activityQueue };
+  module.exports = { activityQueue };
+}

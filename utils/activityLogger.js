@@ -1,11 +1,13 @@
-const ActivityLog = require('../models/activityLog');
-const Profile = require('../models/profile');
-const Project = require('../models/projects');
+const { ActivityLog } = require('../activity/models');
+const { Profile } = require('../auth/models');
+const { Project } = require('../projects/models');
 
 let activityQueue = null;
-try {
-  activityQueue = require('../queues/activityQueue').activityQueue;
-} catch (_) {}
+if (process.env.REDIS_URL) {
+  try {
+    activityQueue = require('../queues/activityQueue').activityQueue;
+  } catch (_) {}
+}
 
 async function logActivity({ actorId, actorName, actorAvatar, action, entityType, entityId, entityName, projectId, projectName, changes, description }) {
   try {

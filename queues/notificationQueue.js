@@ -1,48 +1,46 @@
 const { Queue, Worker } = require('bullmq');
 const { createRedisClient } = require('../config/redis');
 
-const connection = createRedisClient('notification-queue');
+if (!process.env.REDIS_URL) {
+  module.exports = { notificationQueue: null };
+} else {
+  const connection = createRedisClient('notification-queue');
 
-const notificationQueue = new Queue('notifications', { connection });
-const notificationWorker = new Worker(
-  'notifications',
-  async (job) => {
-    const { userId, type, data } = job.data;
+  const notificationQueue = new Queue('notifications', { connection });
+  const notificationWorker = new Worker(
+    'notifications',
+    async (job) => {
+      const { userId, type, data } = job.data;
 
-    const Notification = require('../models/notifications');
-    const { sendMessageToUser } = require('../socket');
+      const { Notification } = require('../notifications/models');
+      const { sendMessageToUser } = require('../socket');
 
-    const notificationDoc = await Notification.findById(userId);
-    if (!notificationDoc) return null;
+      const entry = { type, data: { ...data, createdAt: Date.now() }, read: false };
+      const updated = await Notification.findOneAndUpdate(
+        { _id: userId },
+        { $push: { notifications: { $each: [entry], $slice: -1000 } } },
+        { returnDocument: 'after' },
+      );
+      if (!updated) return null;
 
-    const entry = { type, data: { ...data, createdAt: Date.now() }, read: false };
-    notificationDoc.notifications.push(entry);
+      sendMessageToUser(userId, entry);
 
-    // Prune notifications older than 30 days
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    notificationDoc.notifications = notificationDoc.notifications.filter(
-      (n) => !n.data || !n.data.createdAt || n.data.createdAt >= thirtyDaysAgo
-    );
+      return entry;
+    },
+    {
+      connection,
+      concurrency: 10,
+      limiter: { max: 50, duration: 1000 },
+    }
+  );
 
-    await notificationDoc.save();
+  notificationWorker.on('failed', (job, err) => {
+    console.error(`❌ Notification job ${job.id} failed:`, err.message);
+  });
 
-    sendMessageToUser(userId, entry);
+  notificationWorker.on('completed', (job) => {
+    console.log(`✅ Notification job ${job.id} completed`);
+  });
 
-    return entry;
-  },
-  {
-    connection,
-    concurrency: 10,
-    limiter: { max: 50, duration: 1000 },
-  }
-);
-
-notificationWorker.on('failed', (job, err) => {
-  console.error(`❌ Notification job ${job.id} failed:`, err.message);
-});
-
-notificationWorker.on('completed', (job) => {
-  console.log(`✅ Notification job ${job.id} completed`);
-});
-
-module.exports = { notificationQueue };
+  module.exports = { notificationQueue };
+}

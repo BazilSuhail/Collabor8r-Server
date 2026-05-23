@@ -19,17 +19,23 @@ if (process.env.REDIS_URL) {
 }
 
 const app = express();
+const PORT = process.env.PORT || 3001;
 
 const server = http.createServer(app);
 initSocket(server);
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+  : '*';
+app.use(cors({ origin: corsOrigins }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/health', (req, res) => {
   const memory = process.memoryUsage();
-  console.log(`Memory usage: RSS ${Math.round(memory.rss / 1024 / 1024 * 100) / 100} MB | Heap ${Math.round(memory.heapUsed / 1024 / 1024 * 100) / 100}/${Math.round(memory.heapTotal / 1024 / 1024 * 100) / 100} MB`)
   res.json({
     status: 'ok',
     message: 'Collabor8r API is running',
@@ -43,32 +49,23 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/overview', require('./routes/dashboardRoutes'));
-app.use('/profile', require('./routes/profileRoutes'));
-app.use('/auth', require('./routes/authRoutes'));
-app.use('/admin-projects', require('./routes/adminProjectRoutes'));
-app.use('/manageusers', require('./routes/addUsersRoutes'));
-app.use('/joinedprojects', require('./routes/joinedProjectRoutes'));
-app.use('/manageTasks', require('./routes/taskRoutes'));
-app.use('/projecttasks', require('./routes/usersProjectTasksRoutes'));
-app.use('/comments', require('./routes/commentsRoutes'));
-app.use('/projects', require('./routes/projectRoutes'));
-app.use('/project-tasks', require('./routes/projectTasksRoutes'));
+// Feature-first mounts — each domain owns its routes.
+app.use('/auth', require('./auth/routes'));
+app.use('/profile', require('./users/routes'));
+app.use('/notifications', require('./notifications/routes'));
+app.use('/projects', require('./projects/routes'));
+app.use('/invitations', require('./projects/invitations/routes_global'));
+app.use('/tasks', require('./tasks/routes'));
+app.use('/sprints', require('./sprints/routes'));
+app.use('/time', require('./time/routes'));
+app.use('/activity', require('./activity/routes'));
+app.use('/reports', require('./reports/routes'));
+app.use('/overview', require('./reports/overview'));
+app.use('/chat', require('./chat/routes'));
+app.use('/git', require('./git/routes'));
 
-app.use('/sprints', require('./routes/sprintRoutes'));
-app.use('/activity', require('./routes/activityRoutes'));
-app.use('/time', require('./routes/timeRoutes'));
-app.use('/task-links', require('./routes/taskLinkRoutes'));
-app.use('/ai', require('./routes/aiRoutes'));
-app.use('/filters', require('./routes/filterRoutes'));
-app.use('/boards', require('./routes/boardRoutes'));
-app.use('/labels', require('./routes/labelRoutes'));
-app.use('/invitations', require('./routes/invitationRoutes'));
-app.use('/uploads', require('./routes/uploadRoutes'));
-app.use('/chat', require('./routes/chatRoutes'));
-
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+let httpServer = server;
+httpServer.listen(PORT, () => {
   const mem = process.memoryUsage();
   console.log('═══════════════════════════════════════════');
   console.log(`  🚀  REST API  →  http://localhost:${PORT}`);
@@ -77,3 +74,17 @@ server.listen(PORT, () => {
   console.log(`  💾  Memory    →  RSS ${Math.round(mem.rss / 1024 / 1024 * 100) / 100} MB | Heap ${Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100}/${Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100} MB`);
   console.log('═══════════════════════════════════════════');
 });
+
+const shutdown = async (signal) => {
+  console.log(`\n${signal} received — shutting down gracefully`);
+  httpServer.close(() => {
+    console.log('HTTP server closed');
+  });
+  const mongoose = require('mongoose');
+  await mongoose.connection.close(false);
+  console.log('MongoDB connection closed');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

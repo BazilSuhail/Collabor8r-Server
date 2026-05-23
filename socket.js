@@ -10,9 +10,12 @@ const PRESENCE_PREFIX = "presence";
 const ROOM_PREFIX = "room:project";
 
 const initSocket = (server) => {
+  const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+    : "*";
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: corsOrigins,
       methods: ["GET", "POST"],
     },
   });
@@ -27,44 +30,75 @@ const initSocket = (server) => {
   console.log("⚡ Socket.IO initialized and ready for connections");
 
   io.on("connection", async (socket) => {
-    const { userId } = socket.handshake.auth;
     const token = socket.handshake.auth.token;
-
-    let verifiedUserId = userId;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        verifiedUserId = decoded.id || decoded.userId || decoded._id || userId;
-      } catch (err) {
-        console.warn(`⚠️  Socket auth failed: ${err.message}`);
-        socket.disconnect(true);
-        return;
-      }
+    if (!token) {
+      console.warn("⚠️  Socket connection rejected: no token");
+      socket.disconnect(true);
+      return;
     }
 
-    if (verifiedUserId) {
-      if (connectedUsers.has(verifiedUserId)) {
-        console.log(`🔄 ${verifiedUserId} reconnected — replacing old socket`);
-      }
-      connectedUsers.set(verifiedUserId, socket.id);
-      socket.userId = verifiedUserId;
+    let verifiedUserId;
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      verifiedUserId = decoded.id || decoded.userId || decoded._id;
+      if (!verifiedUserId) throw new Error("No user id in token");
+    } catch (err) {
+      console.warn(`⚠️  Socket auth failed: ${err.message}`);
+      socket.disconnect(true);
+      return;
+    }
 
-      if (pubClient) {
+    connectedUsers.set(verifiedUserId, socket.id);
+    socket.userId = verifiedUserId;
+
+    if (pubClient) {
+      try {
         await pubClient.sadd(`${PRESENCE_PREFIX}:${verifiedUserId}`, socket.id);
         await pubClient.set(`${PRESENCE_PREFIX}:${verifiedUserId}:ts`, Date.now(), "EX", 300);
-      }
-
-      console.log(`✅ User ONLINE  → ${verifiedUserId}  |  Socket: ${socket.id}  |  Total online: ${connectedUsers.size}`);
-      io.emit("online-count", { count: connectedUsers.size });
+      } catch (_) {}
     }
 
+    try {
+      const { Profile } = require("./auth/models");
+      const profile = await Profile.findById(verifiedUserId).select("email name").lean();
+      const email = profile?.email || "unknown";
+      const name = profile?.name || "unknown";
+      socket.userEmail = email;
+      socket.userName = name;
+      console.log(`✅ CONNECTED  →  ${name} (${email})  |  Socket: ${socket.id}  |  Total: ${connectedUsers.size}`);
+    } catch (e) {
+      console.log(`✅ CONNECTED  →  ${verifiedUserId}  |  Socket: ${socket.id}  |  Total: ${connectedUsers.size}`);
+    }
+
+    io.emit("online-count", { count: connectedUsers.size });
+
     socket.on("join-project", async (projectId) => {
+      try {
+        const { Membership } = require("./projects/models");
+        const membership = await Membership.findById(verifiedUserId)
+          .select("admin asLead joined")
+          .lean();
+        const pid = String(projectId);
+        const inBucket =
+          membership &&
+          ((membership.admin || []).some((x) => String(x) === pid) ||
+            (membership.asLead || []).some((x) => String(x) === pid) ||
+            (membership.joined || []).some((x) => String(x) === pid));
+        if (!inBucket) {
+          socket.emit("join:error", { error: "Not a member of this project" });
+          return;
+        }
+      } catch (_) {
+        socket.emit("join:error", { error: "Failed to join project" });
+        return;
+      }
+
       socket.join(`project:${projectId}`);
       if (verifiedUserId && pubClient) {
-        await pubClient.sadd(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
+        try {
+          await pubClient.sadd(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
+        } catch (_) {}
       }
-      console.log(`📌 ${verifiedUserId || "anon"} joined project room: ${projectId}`);
 
       if (verifiedUserId) {
         io.to(`project:${projectId}`).emit("member:online", {
@@ -77,9 +111,10 @@ const initSocket = (server) => {
     socket.on("leave-project", async (projectId) => {
       socket.leave(`project:${projectId}`);
       if (verifiedUserId && pubClient) {
-        await pubClient.srem(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
+        try {
+          await pubClient.srem(`${ROOM_PREFIX}:${projectId}`, verifiedUserId);
+        } catch (_) {}
       }
-      console.log(`🚪 ${verifiedUserId || "anon"} left project room: ${projectId}`);
 
       if (verifiedUserId) {
         io.to(`project:${projectId}`).emit("member:offline", {
@@ -92,10 +127,11 @@ const initSocket = (server) => {
     socket.on("chat:message", async (data) => {
       const { projectId, content, type } = data || {};
       if (!projectId || !content || !verifiedUserId) return;
+      if (typeof content !== "string" || content.length > 5000) return;
 
       try {
-        const ChatMessage = require("./models/chatMessage");
-        const Profile = require("./models/profile");
+        const { ChatMessage } = require("./chat/models");
+        const { Profile } = require("./auth/models");
 
         const message = await ChatMessage.create({
           projectId,
@@ -116,7 +152,6 @@ const initSocket = (server) => {
           user: user || { name: "Unknown", avatar: null },
         });
       } catch (err) {
-        console.error("chat:message error:", err.message);
         socket.emit("chat:error", { error: "Failed to send message" });
       }
     });
@@ -140,7 +175,9 @@ const initSocket = (server) => {
       }
 
       if (wasUserId) {
-        console.log(`❌ User OFFLINE → ${wasUserId}  |  Reason: ${reason}  |  Total online: ${connectedUsers.size}`);
+        const email = socket.userEmail || wasUserId;
+        const name = socket.userName || wasUserId;
+        console.log(`❌ DISCONNECTED  →  ${name} (${email})  |  Socket: ${socket.id}  |  Reason: ${reason}  |  Total: ${connectedUsers.size}`);
         io.emit("online-count", { count: connectedUsers.size });
       }
     });
