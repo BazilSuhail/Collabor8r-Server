@@ -1,0 +1,33 @@
+# Usage: copy .env.example to .env, set the required secrets, then `docker compose up -d --build`.
+services:
+  server:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      MONGO_URI: mongodb://mongo:27017/pm_suite
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads-data:/app/uploads
+    ports:
+      - "4000:4000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    # No ports published: only the server container can reach MongoDB.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+volumes:
+  mongo-data:
+  uploads-data:
