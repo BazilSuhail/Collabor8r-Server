@@ -37,6 +37,28 @@ const fields = {
 
 const patchShape = z.object(fields).partial();
 
+// Keys PATCH/bulk may write (status is never writable). Used as an allowlist by updateIssueInternal.
+export const PATCH_WRITABLE_KEYS = new Set(Object.keys(fields).filter((k) => k !== 'status' && k !== 'statusId'));
+
+// Extra keys an automation setField rule may NOT write (visibility and hierarchy stay manual).
+export const SETFIELD_DENIED_KEYS = new Set(['parentId', 'isPrivate', 'allowedUserIds']);
+
+// Transition screens: only fields that workflow validators/screens legitimately fill in.
+// Unknown keys are stripped (zod default); the service logs them.
+export const TRANSITION_FIELD_KEYS = ['resolutionId', 'assigneeId', 'priorityId', 'customFields', 'startDate', 'dueDate'];
+export const transitionFieldsSchema = z
+  .object({
+    resolutionId: objectId.nullable(),
+    assigneeId: fields.assigneeId,
+    priorityId: fields.priorityId,
+    customFields: fields.customFields,
+    startDate: fields.startDate,
+    dueDate: fields.dueDate,
+  })
+  .partial();
+
+export const patchFieldsSchema = patchShape;
+
 export const createIssueSchema = z
   .object({ typeId: objectId })
   .extend(patchShape.shape)

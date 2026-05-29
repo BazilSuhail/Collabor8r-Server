@@ -6,6 +6,7 @@ import { bumpRollup } from '../../services/rollup.service.js';
 import { emitEvent } from '../../services/events.service.js';
 import { logActivity, actorOf } from '../../services/activity.service.js';
 import { getVisibleIssue, issueSnapshot } from '../issue/issue.service.js';
+import { withIssueVisibility } from '../../services/visibility.service.js';
 
 const sameId = (a, b) => String(a) === String(b);
 
@@ -109,13 +110,15 @@ export async function deleteWorklog({ projectId, issueId, worklogId, userId, isL
   await recordSpent(issue, projectId, -wl.seconds, userId, `removed time from ${issue.key}`, worklogId);
 }
 
-export async function timesheet({ projectId, query }) {
-  const filter = { projectId };
+// viewerId/seesPrivate: pass from the controller to hide private-issue worklogs; omitted viewerId = unfiltered (legacy).
+export async function timesheet({ projectId, query, viewerId = null, seesPrivate = false }) {
+  let filter = { projectId };
   if (query.userId) filter.userId = query.userId;
   if (query.from || query.to) {
     filter.date = {};
     if (query.from) filter.date.$gte = isoDay(query.from);
     if (query.to) filter.date.$lte = isoDay(query.to);
   }
+  if (viewerId) filter = await withIssueVisibility(filter, 'issueId', { projectId, viewerId, seesPrivate });
   return paginate(Worklog, filter, { limit: query.limit, cursor: query.cursor });
 }

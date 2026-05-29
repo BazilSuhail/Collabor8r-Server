@@ -8,6 +8,7 @@ import { rateLimit } from 'express-rate-limit';
 import { requestId } from './middleware/requestId.js';
 import { env } from './config/env.js';
 import { ApiError } from './utils/http.js';
+import { snapshot, bannerHtml } from './utils/status.js';
 import { notFound, errorHandler } from './middleware/error.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import userRoutes from './modules/user/user.routes.js';
@@ -77,7 +78,15 @@ const limiter = (limit, windowMs, message) =>
   });
 
 // Liveness (no DB) and readiness (Mongo connected). Registered before rate limits.
-app.get('/api/health', (req, res) => res.json({ success: true, data: { status: 'ok' } }));
+app.get('/api/health', (req, res) => res.json({ success: true, data: snapshot() }));
+// Pingable aliases for uptime monitors / load balancers (always JSON, no DB, no auth, not rate limited).
+app.get('/health', (req, res) => res.json({ success: true, data: snapshot() }));
+// Status page: ASCII dashboard for browsers, JSON for API clients that ask for it.
+app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.accepts(['html', 'json']) === 'json') return res.json({ success: true, data: snapshot() });
+  res.type('html').send(bannerHtml());
+});
 app.get('/api/ready', (req, res) => {
   const ready = mongoose.connection.readyState === 1;
   res.status(ready ? 200 : 503).json({ success: ready, data: { status: ready ? 'ready' : 'not ready' } });

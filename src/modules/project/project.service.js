@@ -217,6 +217,13 @@ export async function archiveProject({ project, req }) {
   await writeAudit({ req, orgId: project.orgId ?? null, projectId: project._id, action: 'project.archived', targetType: 'project', targetId: project._id, targetName: project.name, before: { status: project.status }, after: { status: 'archived' } });
 }
 
+export async function restoreProject({ project, req }) {
+  if (project.status !== 'archived') throw new ApiError(409, 'Project is not archived');
+  const now = new Date();
+  await Project.updateOne({ _id: project._id }, { $set: { status: 'active', updatedAt: now }, $unset: { archivedAt: '' } });
+  await writeAudit({ req, orgId: project.orgId ?? null, projectId: project._id, action: 'project.restored', targetType: 'project', targetId: project._id, targetName: project.name, before: { status: 'archived' }, after: { status: 'active' } });
+}
+
 export async function getProjectLite(projectId) {
   return Project.findById(projectId).select('key name orgId ownerId').lean();
 }

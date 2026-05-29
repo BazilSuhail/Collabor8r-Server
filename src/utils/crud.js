@@ -21,6 +21,17 @@ const DEFAULT_ROLES = {
   org: { read: 'member', create: 'admin', update: 'admin', remove: 'admin' },
 };
 
+// List query schema: paging + q + each configured filter key as a plain string (ids as 24-hex).
+// Strings only, so qs objects like ?status[$ne]=x fail validation instead of reaching Mongo.
+// A custom listQuerySchema must declare its own filter keys.
+export const buildListSchema = (filterFields = []) =>
+  pageQuerySchema.extend({
+    q: z.string().trim().max(200).optional(),
+    ...Object.fromEntries(
+      filterFields.map((key) => [key, (/Id$/.test(key) ? objectId : z.string().trim().min(1).max(100)).optional()]),
+    ),
+  });
+
 const buildCrud = (kind, options) => {
   const {
     Model,
@@ -39,7 +50,7 @@ const buildCrud = (kind, options) => {
   } = options;
   const roles = { ...DEFAULT_ROLES[kind], ...options.roles };
   const isProject = kind === 'project';
-  const listSchema = listQuerySchema ?? pageQuerySchema.extend({ q: z.string().trim().max(200).optional() });
+  const listSchema = listQuerySchema ?? buildListSchema(filterFields);
 
   const guard = (minRole) => (isProject ? requireProjectRole(minRole) : requireOrgRole(minRole));
   const rankOf = (req) => (isProject ? PROJECT_ROLE_RANK[req.projectRole] : ORG_ROLE_RANK[req.orgRole]);
@@ -89,7 +100,8 @@ const buildCrud = (kind, options) => {
       const q = req.valid.query.q;
       if (q && searchFields.length) {
         const pattern = escapeRegex(q);
-        filter.$or = searchFields.map((field) => ({ [field]: { $regex: pattern, $options: 'i' } }));
+        const search = { $or: searchFields.map((field) => ({ [field]: { $regex: pattern, $options: 'i' } })) };
+        filter.$and = [...(filter.$and ?? []), search];
       }
       const { items, meta } = await paginate(Model, filter, { sort, ...parsePageQuery(req.valid.query) });
       paged(res, items, meta);

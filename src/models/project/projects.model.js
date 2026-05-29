@@ -38,7 +38,11 @@ const schema = new Schema({
   lastActivityAt: Date
 }, { timestamps: true, versionKey: false });
 
-schema.index({ scope: 1, orgId: 1, key: 1 }, { unique: true, sparse: true });
+// Replaces the old sparse unique { scope, orgId, key } (named scope_1_orgId_1_key_1), which wrongly made
+// every personal project (orgId null) share one key space. After these build, drop the old one manually:
+//   db.projects.dropIndex('scope_1_orgId_1_key_1')   (syncIndexes is additive and never drops it)
+schema.index({ orgId: 1, key: 1 }, { unique: true, partialFilterExpression: { scope: 'org' }, name: 'uniq_org_key' });
+schema.index({ ownerId: 1, key: 1 }, { unique: true, partialFilterExpression: { scope: 'personal' }, name: 'uniq_personal_key' });
 schema.index({ ownerId: 1, scope: 1, status: 1 });
 schema.index({ orgId: 1, status: 1, name: 1 });
 schema.index({ orgId: 1, health: 1 });

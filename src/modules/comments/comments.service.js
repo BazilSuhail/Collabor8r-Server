@@ -22,6 +22,8 @@ export async function addCommentInternal({ projectId, issueId, authorId = null, 
     actorId: authorId,
     title: `Mentioned in ${issue.key}`,
     link,
+    issue,
+    internal,
   });
 
   const comment = await IssueComment.create({

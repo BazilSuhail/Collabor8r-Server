@@ -5,7 +5,7 @@ import { paginate, parsePageQuery } from '../../utils/pagination.js';
 import { actorOf } from '../../services/activity.service.js';
 import { emitEvent } from '../../services/events.service.js';
 import { notify } from '../../services/notify.service.js';
-import { getIssueInProject } from '../issue/issue.service.js';
+import { getIssueInProject, getVisibleIssue } from '../issue/issue.service.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(v);
 
@@ -41,13 +41,19 @@ export async function setTimerPaused(projectId, timerId, pause) {
   ).lean();
 }
 
-export async function listApprovals(projectId, issueId, query) {
-  await getIssueInProject(projectId, issueId);
+// viewerId omitted = legacy unfiltered; controller should pass req.user.id and canSeePrivateIssues(req.projectRole).
+export async function listApprovals(projectId, issueId, query, viewerId = null, seesPrivate = false) {
+  if (viewerId) await getVisibleIssue(projectId, issueId, viewerId, seesPrivate);
+  else await getIssueInProject(projectId, issueId);
   return paginate(Approval, { projectId, issueId: oid(issueId) }, { ...parsePageQuery(query, {}), sort: { _id: -1 }, lean: true });
 }
 
-export async function requestApprovals(project, userId, issueId, approverIds) {
-  const issue = await getIssueInProject(project._id, issueId);
+// seesPrivate undefined = legacy unfiltered; controller should pass canSeePrivateIssues(req.projectRole).
+export async function requestApprovals(project, userId, issueId, approverIds, seesPrivate) {
+  const issue =
+    seesPrivate === undefined
+      ? await getIssueInProject(project._id, issueId)
+      : await getVisibleIssue(project._id, issueId, userId, seesPrivate);
   const unique = [...new Set(approverIds.map(String))];
   const members = await ProjectMember.countDocuments({ projectId: project._id, userId: { $in: unique.map(oid) }, status: 'active' });
   if (members !== unique.length) throw new ApiError(422, 'Approvers must be active project members');

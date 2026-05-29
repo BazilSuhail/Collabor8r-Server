@@ -23,6 +23,7 @@ router.post('/projects/invites/accept', auth, validate(s.acceptInviteSchema), c.
 router.get('/projects/:projectId', auth, requireProjectRole('guest'), c.getProject);
 router.patch('/projects/:projectId', auth, requireProjectRole('admin'), validate(s.updateProjectSchema), c.updateProject);
 router.delete('/projects/:projectId', auth, requireProjectRole('admin'), c.archiveProject);
+router.post('/projects/:projectId/restore', auth, requireProjectRole('admin'), c.restoreProject);
 
 router.get('/projects/:projectId/members', auth, requireProjectRole('viewer'), validate(s.memberListQuerySchema, 'query'), c.listProjectMembers);
 router.post('/projects/:projectId/members', auth, requireProjectRole('admin'), validate(s.addProjectMemberSchema), c.addProjectMember);

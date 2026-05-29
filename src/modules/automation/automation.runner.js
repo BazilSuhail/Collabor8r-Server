@@ -4,6 +4,7 @@ import { AutomationRule, AutomationRun, Issue, Webhook } from '../../models/inde
 import { onEvent } from '../../services/events.service.js';
 import { notify } from '../../services/notify.service.js';
 import { updateIssueInternal, transitionIssueInternal } from '../issue/issue.service.js';
+import { patchFieldsSchema, PATCH_WRITABLE_KEYS, SETFIELD_DENIED_KEYS } from '../issue/issue.schemas.js';
 import { addCommentInternal } from '../comments/comments.service.js';
 import { deliverWebhook } from '../webhooks/webhooks.dispatcher.js';
 
@@ -20,6 +21,32 @@ const TRIGGER_BY_EVENT = {
 };
 
 const FIELD_ALIAS = { priority: 'priorityId', assignee: 'assigneeId', issueType: 'type', status: 'statusId' };
+
+const NUM_FIELDS = new Set(['storyPoints', 'estimateSec', 'remainingSec']);
+const BOOL_FIELDS = new Set(['isPrivate']);
+const LIST_FIELDS = new Set(['labels', 'watcherIds', 'releaseIds', 'componentIds', 'allowedUserIds']);
+const TEXT_FIELDS = new Set(['title', 'summary', 'description']);
+const CUSTOM_FIELD = /^customFields\.([A-Za-z0-9_-]{1,64})$/;
+
+// Turns a setField config into a validated issue patch. Throws a plain Error (fails the run) for blocked or invalid fields.
+export function buildSetFieldPatch(cfg) {
+  const field = String(cfg?.field ?? '');
+  let value = cfg?.value;
+  const cf = CUSTOM_FIELD.exec(field);
+  const key = cf ? 'customFields' : FIELD_ALIAS[field] ?? field;
+  const fail = () => new Error(`setField: "${field}" is not a writable field or the value is invalid`);
+  if (!PATCH_WRITABLE_KEYS.has(key) || SETFIELD_DENIED_KEYS.has(key)) throw fail();
+  if (cf) return { customFields: { [cf[1]]: value } };
+  if (typeof value === 'string') {
+    if (NUM_FIELDS.has(key)) value = value.trim() === '' ? null : Number(value);
+    else if (BOOL_FIELDS.has(key)) value = value === 'true';
+    else if (LIST_FIELDS.has(key)) value = value.split(',').map((s) => s.trim()).filter(Boolean);
+    else if (value === '' && !TEXT_FIELDS.has(key)) value = null;
+  }
+  const parsed = patchFieldsSchema.pick({ [key]: true }).safeParse({ [key]: value });
+  if (!parsed.success) throw fail();
+  return parsed.data;
+}
 
 const fieldValue = (issue, field) => issue[FIELD_ALIAS[field] ?? field];
 
@@ -45,14 +72,15 @@ async function runAction(action, { event, rule, issueId, projectId, actorId }) {
   const cfg = action.config ?? {};
   switch (action.type) {
     case 'setField':
-      return updateIssueInternal({ projectId, issueId, patch: { [cfg.field]: cfg.value }, actorId });
+      return updateIssueInternal({ projectId, issueId, patch: buildSetFieldPatch(cfg), actorId });
     case 'assign':
       return updateIssueInternal({ projectId, issueId, patch: { assigneeId: cfg.assigneeId ?? null }, actorId });
     case 'transition':
-      return transitionIssueInternal({ projectId, issueId, toStatus: cfg.toStatus, actorId, fields: {}, req: undefined });
+      return transitionIssueInternal({ projectId, issueId, toStatus: cfg.toStatus, actorId, fields: {}, req: { isSystem: true } });
     case 'addComment':
       return addCommentInternal({ projectId, issueId, authorId: actorId ?? rule.createdBy, body: cfg.body, internal: Boolean(cfg.internal) });
     case 'addLabel': {
+      if (typeof cfg.label !== 'string' || !cfg.label.trim() || cfg.label.length > 50) return null; // nothing valid to add
       const issue = await Issue.findOne({ _id: issueId, projectId }).select('labels').lean();
       const labels = [...new Set([...(issue?.labels ?? []), cfg.label])];
       return updateIssueInternal({ projectId, issueId, patch: { labels }, actorId });

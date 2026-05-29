@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { asyncHandler, ok } from '../../utils/http.js';
 import { objectId } from '../../utils/helpers.js';
 import * as svc from './reports.service.js';
+import { canSeePrivateIssues } from '../../services/visibility.service.js';
 
 export const reportQuerySchema = z.object({
   from: z.coerce.date().optional(),
@@ -30,5 +31,5 @@ export const getTimeSpent = asyncHandler(async (req, res) => {
 });
 
 export const getWorkload = asyncHandler(async (req, res) => {
-  ok(res, await svc.getWorkload(req.project._id));
+  ok(res, await svc.getWorkload(req.project._id, req.user.id, canSeePrivateIssues(req.projectRole)));
 });

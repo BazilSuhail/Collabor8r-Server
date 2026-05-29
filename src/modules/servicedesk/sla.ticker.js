@@ -4,6 +4,8 @@ import { onEvent, emitEvent } from '../../services/events.service.js';
 import { notify } from '../../services/notify.service.js';
 
 const TICK_MS = 60000;
+const BREACH_BATCH = 200; // timers per query
+const BREACH_MAX_BATCHES = 25; // per tick; leftovers are picked up next tick
 
 async function startTimers(event) {
   const issue = await Issue.findOne({ _id: event.issueId, projectId: event.projectId }).select('type').lean();
@@ -71,7 +73,16 @@ async function applyStatus(event) {
 
 async function breachDueTimers() {
   const now = new Date();
-  const due = await SlaTimer.find({ status: 'running', dueAt: { $lte: now } }).lean();
+  for (let batch = 0; batch < BREACH_MAX_BATCHES; batch += 1) {
+    const due = await SlaTimer.find({ status: 'running', dueAt: { $lte: now } }).sort({ dueAt: 1 }).limit(BREACH_BATCH).lean();
+    if (!due.length) return;
+    await breachBatch(due, now);
+    if (due.length < BREACH_BATCH) return;
+  }
+}
+
+// Breached timers leave the 'running' set, so the next batch query naturally moves on.
+async function breachBatch(due, now) {
   for (const timer of due) {
     const res = await SlaTimer.updateOne({ _id: timer._id, status: 'running' }, { $set: { status: 'breached', breachedAt: now } });
     if (!res.modifiedCount) continue;

@@ -2,6 +2,9 @@
 import { logger } from '../utils/logger.js';
 import { Notification, NotificationPref, Project, ProjectMember, User } from '../models/index.js';
 import { actorOf } from './activity.service.js';
+import { getProjectAccess } from './access.service.js';
+import { canUserSeeIssue } from './visibility.service.js';
+import { PROJECT_ROLE_RANK } from '../config/constants.js';
 
 const RETENTION_MS = 90 * 86_400_000;
 const OBJECT_ID = /^[a-fA-F0-9]{24}$/;
@@ -50,7 +53,7 @@ export const notify = async ({ userIds, type, title, body, projectId, orgId, lin
 
 // Notifies project members named as @email or @[userId] in text.
 export const notifyMentions = async (text, ctx) => {
-  const { projectId, orgId, actorId, title, body, link } = ctx;
+  const { projectId, orgId, actorId, title, body, link, issue = null, internal = false } = ctx;
   const ids = new Set();
   const emails = new Set();
   for (const m of String(text ?? '').matchAll(MENTION_ID)) ids.add(m[1]);
@@ -72,7 +75,25 @@ export const notifyMentions = async (text, ctx) => {
   const allowed = new Set(members.map((m) => String(m.userId)));
   if (project) allowed.add(String(project.ownerId));
 
-  const recipients = candidates.filter((id) => allowed.has(id) && id !== String(actorId ?? ''));
+  let recipients = candidates.filter((id) => allowed.has(id) && id !== String(actorId ?? ''));
+
+  // Skip people who cannot see the issue (private) or the comment (internal = developer and above).
+  if (issue && (issue.isPrivate || internal) && recipients.length) {
+    const kept = [];
+    for (const id of recipients) {
+      let role = null;
+      try {
+        role = (await getProjectAccess(id, projectId))?.role ?? null;
+      } catch (err) {
+        logger.error('Mention access check failed:', err.message);
+      }
+      if (!role) continue; // fail closed
+      if (internal && (PROJECT_ROLE_RANK[role] ?? 0) < PROJECT_ROLE_RANK.developer) continue;
+      if (!canUserSeeIssue(issue, id, role)) continue;
+      kept.push(id);
+    }
+    recipients = kept;
+  }
   await notify({ userIds: recipients, type: 'mention', title, body, projectId, orgId, link, actorId });
   return recipients;
 };

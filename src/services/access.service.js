@@ -41,17 +41,17 @@ export const getProjectAccess = async (userId, projectId) => {
     return String(project.ownerId) === String(userId) ? systemAccess(project, 'admin', null) : null;
   }
 
-  const orgRole = await getOrgRole(userId, project.orgId);
-  const membership = await ProjectMember.findOne({ projectId, userId, status: 'active' })
-    .select('role')
-    .lean();
+  const [orgRole, membership] = await Promise.all([
+    getOrgRole(userId, project.orgId),
+    ProjectMember.findOne({ projectId, userId, status: 'active' }).select('role').lean(),
+  ]);
 
   if (membership) {
     const roleValue = String(membership.role);
     if (PROJECT_ROLES.includes(roleValue)) return systemAccess(project, roleValue, orgRole);
-    const custom = await ProjectRole.findById(roleValue).select('permissions').lean();
+    const custom = await ProjectRole.findById(roleValue).select('permissions name').lean();
     const perms = custom?.permissions ?? [];
-    return accessFor(project, roleFromPerms(perms), perms, orgRole);
+    return { ...accessFor(project, roleFromPerms(perms), perms, orgRole), roleName: custom?.name };
   }
 
   if (orgRole === 'owner' || orgRole === 'admin') return systemAccess(project, 'admin', orgRole);

@@ -15,6 +15,8 @@ import {
   SlaTimer,
 } from '../../models/index.js';
 import { ApiError } from '../../utils/http.js';
+import { logger } from '../../utils/logger.js';
+import { PATCH_WRITABLE_KEYS, transitionFieldsSchema, TRANSITION_FIELD_KEYS } from './issue.schemas.js';
 import { escapeRegex } from '../../utils/helpers.js';
 import { paginate } from '../../utils/pagination.js';
 import { rankAfter } from '../../utils/rank.js';
@@ -91,9 +93,9 @@ const flagsFor = (doc, now = new Date()) => ({
 
 // Checklist items keep doneBy/doneAt from the previous state when still done.
 function toChecklist(items = [], actorId, now, prev = []) {
-  const before = new Map(prev.map((i) => [i.id, i]));
+  const before = new Map(prev.map((i) => [String(i.id), i]));
   return items.map((i) => {
-    const id = i.id ?? randomUUID();
+    const id = String(i.id ?? randomUUID());
     const done = !!i.done;
     const old = before.get(id);
     if (!done) return { id, text: i.text, done: false, doneBy: null, doneAt: null };
@@ -345,6 +347,9 @@ export async function createIssueInternal({ projectId, reporterId = null, input,
 }
 
 export async function updateIssueInternal({ projectId, issueId, patch, expectedVersion, actorId }) {
+  // Allowlist guard for internal callers (automation). ApiError, never a ZodError, so bulkUpdate keeps going.
+  const badKeys = Object.keys(patch ?? {}).filter((k) => !PATCH_WRITABLE_KEYS.has(k));
+  if (badKeys.length) throw invalid(badKeys[0], `Field is not writable: ${badKeys.join(', ')}`);
   const before = await getIssueInProject(projectId, issueId);
   const now = new Date();
   const set = { ...patch };
@@ -437,6 +442,18 @@ export async function updateIssueInternal({ projectId, issueId, patch, expectedV
 
 export async function transitionIssueInternal({ projectId, issueId, transitionId, toStatus, actorId, fields = {}, req }) {
   const issue = await getIssueInProject(projectId, issueId);
+  // Whitelist transition fields: unknown keys are stripped and logged (strict rejection planned for a later release).
+  const rawFields = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
+  const parsedFields = transitionFieldsSchema.safeParse(rawFields);
+  if (!parsedFields.success) {
+    throw new ApiError(422, 'Invalid transition fields', parsedFields.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })));
+  }
+  fields = parsedFields.data;
+  const dropped = Object.keys(rawFields).filter((k) => !TRANSITION_FIELD_KEYS.includes(k));
+  if (dropped.length) logger.warn(`transition fields stripped for ${issue.key}: ${dropped.join(', ')}`);
+  if (fields.assigneeId) await assertAssignable(projectId, fields.assigneeId);
+  if (fields.customFields) await checkCustomFields(projectId, issue.type, fields.customFields);
+  const priority = fields.priorityId ? await loadPriority(projectId, fields.priorityId) : null;
   const result = await applyTransition({ issue, transitionId, toStatus, actorId, fields, req });
   const next = statusFields(result.toStatus);
   const now = new Date();
@@ -444,6 +461,10 @@ export async function transitionIssueInternal({ projectId, issueId, transitionId
   const nowDone = isDone(next.statusCategory);
 
   const set = { ...next, ...(result.setFields ?? {}) };
+  if ('priorityId' in fields) Object.assign(set, priorityFields(priority));
+  if ('assigneeId' in fields && !('assignee' in set)) {
+    set.assignee = fields.assigneeId ? personSnap(await usersFor([fields.assigneeId]), fields.assigneeId) : null;
+  }
   if (nowDone && !wasDone) {
     set.resolvedAt = now;
     set.closedAt = now;
@@ -479,7 +500,7 @@ export async function transitionIssueInternal({ projectId, issueId, transitionId
   }
   await bumpRollup({ projectId, orgId: issue.orgId, date: now, inc });
 
-  const changes = diffFields(issue, updated, ['statusName', 'resolutionId']);
+  const changes = diffFields(issue, updated, ['statusName', 'resolutionId', ...['assigneeId', 'priorityId', 'startDate', 'dueDate'].filter((k) => k in fields)]);
   await writeHistory({ issueId: issue._id, projectId, actorId, changes });
   await logActivity({
     projectId,

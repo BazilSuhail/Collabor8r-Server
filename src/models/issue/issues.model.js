@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
@@ -5,7 +6,7 @@ const { Schema } = mongoose;
 const max = (n) => ({ validator: (v) => v.length <= n, message: `max ${n} items` });
 
 const ChecklistSchema = new Schema({
-  id: { type: Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
+  id: { type: String, default: () => randomUUID() },
   text: { type: String, required: true },
   done: { type: Boolean, default: false },
   doneBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },

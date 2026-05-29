@@ -7,6 +7,7 @@ import Workflow from '../../models/project/workflows.model.js';
 import Issue from '../../models/issue/issues.model.js';
 
 const VALIDATOR_TYPES = ['requiredField', 'assigneeRequired', 'resolutionRequired', 'onlyRoles', 'subtasksDone'];
+const CATEGORY_WORDS = ['todo', 'inprogress', 'done'];
 const POST_ACTION_TYPES = ['setResolution', 'clearResolution', 'assignToReporter'];
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
@@ -170,6 +171,8 @@ function checkRule(rule, merged, issue, req) {
     case 'resolutionRequired':
       return merged.resolutionId ? null : 'A resolution is required';
     case 'onlyRoles':
+      // Explicit flag set only by the automation runner; a missing req never bypasses.
+      if (req?.isSystem === true) return null;
       return rule.roles.includes(req?.projectRole) ? null : 'Your role cannot perform this transition';
     case 'subtasksDone':
       return (issue.counts?.subtasks ?? 0) <= (issue.counts?.subtasksDone ?? 0) ? null : 'All subtasks must be done';
@@ -182,16 +185,26 @@ function checkRule(rule, merged, issue, req) {
 export async function applyTransition({ issue, transitionId, toStatus, fields = {}, req }) {
   const workflow = await getWorkflowForIssueType(issue.projectId, issue.type);
   const from = String(issue.statusId);
-  const transition = transitionId
-    ? workflow.transitions.find((t) => sameId(t.id, transitionId))
-    : workflow.transitions.find((t) => sameId(t.to, toStatus) && t.from.some((f) => sameId(f, from)));
+  let transition;
+  if (transitionId) {
+    transition = workflow.transitions.find((t) => sameId(t.id, transitionId));
+  } else if (CATEGORY_WORDS.includes(toStatus)) {
+    // Category word (todo, inprogress, done): pick the allowed transition into that category, lowest status sortOrder first.
+    const byId = new Map(workflow.statuses.map((s) => [String(s.id), s]));
+    transition = workflow.transitions
+      .filter((t) => t.from.some((f) => sameId(f, from)) && !sameId(t.to, from) && byId.get(String(t.to))?.category === toStatus)
+      .sort((a, b) => (byId.get(String(a.to)).sortOrder ?? 0) - (byId.get(String(b.to)).sortOrder ?? 0))[0];
+  } else {
+    transition = workflow.transitions.find((t) => sameId(t.to, toStatus) && t.from.some((f) => sameId(f, from)));
+  }
   if (!transition || !transition.from.some((f) => sameId(f, from))) {
     throw new ApiError(422, 'Transition not allowed from the current status');
   }
   const target = workflow.statuses.find((s) => sameId(s.id, transition.to));
   if (!target) throw new ApiError(422, 'Transition target status not found');
 
-  const merged = { ...issue, ...fields };
+  // customFields merge per key so validators see existing values and the write does not replace the object.
+  const merged = { ...issue, ...fields, customFields: { ...(issue.customFields ?? {}), ...(fields.customFields ?? {}) } };
   const errors = [];
   for (const field of transition.requiredFields) {
     if (isEmpty(readField(merged, field))) errors.push({ path: field, message: `${field} is required` });
@@ -205,13 +218,17 @@ export async function applyTransition({ issue, transitionId, toStatus, fields = 
   const now = new Date();
   const wasDone = issue.statusCategory === 'done';
   const isDone = target.category === 'done';
+  const { customFields: customPatch, ...plainFields } = fields;
   const setFields = {
-    ...fields,
+    ...plainFields,
     statusId: target.id,
     statusName: target.name,
     statusCategory: target.category,
     statusColor: target.color ?? '',
   };
+  // A dotted $set fails when the stored customFields is null/non-object; write the merged object then.
+  if (customPatch && (!issue.customFields || typeof issue.customFields !== 'object')) setFields.customFields = { ...customPatch };
+  else for (const [k, v] of Object.entries(customPatch ?? {})) setFields[`customFields.${k}`] = v; // keys vetted by the service
   if (isDone && !wasDone) setFields.resolvedAt = now;
   if (!isDone && wasDone) setFields.resolvedAt = null;
 

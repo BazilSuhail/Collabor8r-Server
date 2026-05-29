@@ -4,6 +4,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { connectDb } from './config/db.js';
 import { logger } from './utils/logger.js';
+import { banner } from './utils/status.js';
 import { registerAutomationRunner } from './modules/automation/automation.runner.js';
 import { registerWebhookDispatcher } from './modules/webhooks/webhooks.dispatcher.js';
 import { registerSlaTicker } from './modules/servicedesk/sla.ticker.js';
@@ -63,6 +64,11 @@ if (env.backgroundJobs) {
   logger.info('Background jobs disabled (BACKGROUND_JOBS=false)');
 }
 
-server = app.listen(env.port, () => logger.info(`API listening on port ${env.port}`));
+server = app.listen(env.port, () => {
+  logger.info(`API listening on port ${env.port}`);
+  console.log(`
+${banner()}
+`);
+});
 // Keep-alive longer than typical proxy idle timeouts avoids sporadic 502s behind a load balancer.
 server.keepAliveTimeout = 65000;

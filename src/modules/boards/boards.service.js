@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import { ApiError } from '../../utils/http.js';
 import { paginate } from '../../utils/pagination.js';
 import { rankBetween } from '../../utils/rank.js';
+import { writeHistory } from '../../services/history.service.js';
+import { logger } from '../../utils/logger.js';
 import { privateFilter, getVisibleIssue } from '../issue/issue.service.js';
 import { getPublicUsers } from '../user/user.service.js';
 import { getWorkflowForIssueType } from '../workflows/workflows.service.js';
@@ -87,7 +89,9 @@ export async function getBoardIssues({ projectId, board, query, viewerId, seesPr
   if (query.label) filter.labels = query.label;
   if (!seesPrivate) filter.$and = [{ $or: privateFilter(viewerId) }];
 
-  const issues = await Issue.find(filter).select('-description').sort({ rank: 1, _id: 1 }).limit(BOARD_ISSUE_LIMIT).lean();
+  const issues = await Issue.find(filter).select('-description').sort({ rank: 1, _id: 1 }).limit(BOARD_ISSUE_LIMIT + 1).lean();
+  const truncated = issues.length > BOARD_ISSUE_LIMIT;
+  if (truncated) issues.pop();
   const assigneeIds = [...new Set(issues.filter((i) => i.assigneeId).map((i) => String(i.assigneeId)))];
   const users = await getPublicUsers(assigneeIds);
 
@@ -110,6 +114,7 @@ export async function getBoardIssues({ projectId, board, query, viewerId, seesPr
     board: { id: board._id, name: board.name, type: board.type, swimlaneBy: board.swimlaneBy },
     lanes: [...lanes],
     columns,
+    meta: { truncated, limit: BOARD_ISSUE_LIMIT },
   };
 }
 
@@ -146,5 +151,16 @@ export async function rankIssueService({ projectId, issueId, input, viewerId, se
     if (input.sprintId) await assertSprintInProject(projectId, input.sprintId);
     set.sprintId = input.sprintId ?? null;
   }
-  return Issue.findOneAndUpdate({ _id: issueId, projectId }, { $set: set }, { returnDocument: 'after' }).select('-description').lean();
+  const sprintChanging = input.sprintId !== undefined;
+  const prevSprint = sprintChanging ? (await Issue.findOne({ _id: issueId, projectId }).select('sprintId').lean())?.sprintId ?? null : null;
+  const updated = await Issue.findOneAndUpdate({ _id: issueId, projectId }, { $set: set }, { returnDocument: 'after' }).select('-description').lean();
+  // Trace sprint membership for the burndown; failure must never break the move.
+  if (updated && sprintChanging && String(prevSprint ?? '') !== String(set.sprintId ?? '')) {
+    try {
+      await writeHistory({ issueId, projectId, actorId: viewerId, changes: { sprintId: { from: prevSprint, to: set.sprintId } } });
+    } catch (err) {
+      logger.warn('sprintId history write failed', err);
+    }
+  }
+  return updated;
 }

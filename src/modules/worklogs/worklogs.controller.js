@@ -45,6 +45,6 @@ export const deleteWorklog = asyncHandler(async (req, res) => {
 });
 
 export const listTimesheet = asyncHandler(async (req, res) => {
-  const { items, meta } = await svc.timesheet({ projectId: req.params.projectId, query: req.valid.query });
+  const { items, meta } = await svc.timesheet({ projectId: req.params.projectId, query: req.valid.query, viewerId: req.user.id, seesPrivate: seesPrivateOf(req) });
   paged(res, items, meta);
 });

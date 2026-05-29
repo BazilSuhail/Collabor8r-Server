@@ -30,6 +30,8 @@ const schema = new Schema(
 
 schema.index({ userId: 1, readAt: 1, createdAt: -1 });
 schema.index({ userId: 1, projectId: 1, createdAt: -1 });
+schema.index({ userId: 1, _id: -1 }); // list sort
+schema.index({ userId: 1, projectId: 1, _id: -1 });
 schema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('Notification', schema, 'notifications');

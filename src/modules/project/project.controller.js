@@ -20,7 +20,10 @@ export const createPersonalProject = asyncHandler(async (req, res) => {
 });
 
 export const getProject = asyncHandler(async (req, res) => {
-  ok(res, req.project);
+  ok(res, {
+    ...req.project,
+    myAccess: { role: req.projectRole, roleName: req.projectRoleName ?? req.projectRole, perms: req.projectPerms, orgRole: req.projectOrgRole },
+  });
 });
 
 export const updateProject = asyncHandler(async (req, res) => {
@@ -29,6 +32,11 @@ export const updateProject = asyncHandler(async (req, res) => {
 
 export const archiveProject = asyncHandler(async (req, res) => {
   await svc.archiveProject({ project: req.project, req });
+  noContent(res);
+});
+
+export const restoreProject = asyncHandler(async (req, res) => {
+  await svc.restoreProject({ project: req.project, req });
   noContent(res);
 });
 

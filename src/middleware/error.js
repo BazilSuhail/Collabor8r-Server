@@ -22,6 +22,10 @@ export const errorHandler = (err, req, res, next) => {
     status = 400;
     message = `Invalid value for ${err.path}`;
     errors = [{ path: err.path, message: `Invalid ${err.kind || 'value'}` }];
+  } else if (err.name === 'BSONError' && /24 character hex|12 byte|integer/.test(err.message || '')) {
+    status = 400;
+    message = 'Invalid id';
+    errors = [{ path: 'id', message: 'Invalid id' }];
   } else if (err.name === 'ValidationError' && err.errors) {
     status = 400;
     message = 'Validation failed';

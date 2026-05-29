@@ -21,5 +21,6 @@ const schema = new Schema(
 
 schema.index({ issueId: 1, metric: 1 }, { unique: true });
 schema.index({ projectId: 1, status: 1, dueAt: 1 });
+schema.index({ status: 1, dueAt: 1 }); // breach ticker scan (no projectId)
 
 export default mongoose.model('SlaTimer', schema, 'slaTimers');

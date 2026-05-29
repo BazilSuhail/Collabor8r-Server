@@ -21,6 +21,7 @@ export const requireProjectRole = (minRole) => async (req, res, next) => {
 
     req.project = access.project;
     req.projectRole = access.role;
+    req.projectRoleName = access.roleName ?? access.role;
     req.projectPerms = access.perms;
     req.projectOrgRole = access.orgRole;
     next();

@@ -9,6 +9,14 @@ const WINDOW_MS = 60000;
 const MAX_PER_WINDOW = 10;
 const hits = new Map();
 
+// Bounded cleanup: drop IPs whose hits have all expired.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, list] of hits) {
+    if (!list.some((t) => now - t < WINDOW_MS)) hits.delete(ip);
+  }
+}, WINDOW_MS).unref();
+
 // In-memory limit: 10 submissions per minute per IP.
 function submitLimit(req, res, next) {
   const now = Date.now();

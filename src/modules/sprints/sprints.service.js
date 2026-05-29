@@ -4,6 +4,8 @@ import { paginate } from '../../utils/pagination.js';
 import { emitEvent } from '../../services/events.service.js';
 import { notify } from '../../services/notify.service.js';
 import { actorOf, logActivity } from '../../services/activity.service.js';
+import { writeHistory } from '../../services/history.service.js';
+import { logger } from '../../utils/logger.js';
 import Sprint from '../../models/project/sprints.model.js';
 import Board from '../../models/project/boards.model.js';
 import ProjectMember from '../../models/project/projectMembers.model.js';
@@ -165,7 +167,21 @@ export async function completeSprint({ project, sprintId, input, actorId }) {
 
   const unresolved = { projectId: pid, sprintId: sid, statusCategory: { $ne: 'done' } };
   const carriedCount = await Issue.countDocuments(unresolved);
+  // Capture carried ids first so membership history can be written after the move (best effort).
+  let carriedIds = [];
+  try {
+    carriedIds = (await Issue.find(unresolved).select('_id').lean()).map((i) => i._id);
+  } catch (err) {
+    logger.warn('carry-over id capture failed', err);
+  }
   await Issue.updateMany(unresolved, { $set: { sprintId: nextId } });
+  try {
+    for (const issueId of carriedIds) {
+      await writeHistory({ issueId, projectId, actorId, changes: { sprintId: { from: sid, to: nextId } } });
+    }
+  } catch (err) {
+    logger.warn('carry-over sprintId history write failed', err);
+  }
 
   const completed = await Sprint.findOneAndUpdate(
     { _id: sprintId },
